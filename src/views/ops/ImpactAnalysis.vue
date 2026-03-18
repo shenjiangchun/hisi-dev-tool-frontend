@@ -63,11 +63,13 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
+import { ElMessage } from 'element-plus'
 import { opsApi } from '@/api/ops'
+import type { ImpactResult } from '@/types/callchain'
 
 const analyzing = ref(false)
 const projects = ref<string[]>([])
-const results = ref<any[]>([])
+const results = ref<ImpactResult[]>([])
 
 const analysisForm = reactive({
   project: '',
@@ -80,19 +82,29 @@ const loadProjects = async () => {
     const res = await opsApi.getProjects()
     projects.value = res.data || []
   } catch (error) {
+    ElMessage.error('加载项目列表失败')
     console.error('Failed to load projects:', error)
   }
 }
 
 const runAnalysis = async () => {
-  if (!analysisForm.project || !analysisForm.target) {
+  if (!analysisForm.project) {
+    ElMessage.warning('请选择项目')
+    return
+  }
+  if (!analysisForm.target) {
+    ElMessage.warning('请输入目标对象')
     return
   }
   analyzing.value = true
   try {
     const res = await opsApi.runImpactAnalysis(analysisForm)
     results.value = res.data || []
+    if (results.value.length === 0) {
+      ElMessage.info('未找到影响范围')
+    }
   } catch (error) {
+    ElMessage.error('分析失败，请稍后重试')
     console.error('Analysis failed:', error)
   } finally {
     analyzing.value = false

@@ -34,14 +34,16 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { callChainApi } from '@/api/callChain'
+import type { UriInfo } from '@/types/callchain'
 
 const route = useRoute()
 const router = useRouter()
 const projectName = route.query.project as string || ''
 const loading = ref(false)
 const searchText = ref('')
-const uris = ref<any[]>([])
+const uris = ref<UriInfo[]>([])
 
 const filteredUris = computed(() => {
   if (!searchText.value) return uris.value
@@ -54,7 +56,7 @@ const goBack = () => {
   router.push('/call-chain')
 }
 
-const viewCallChain = (row: any) => {
+const viewCallChain = (row: UriInfo) => {
   router.push({
     path: '/call-chain/graph',
     query: { project: projectName, uri: row.uri }
@@ -67,6 +69,7 @@ onMounted(async () => {
     const res = await callChainApi.getUris({ project: projectName })
     uris.value = res.data || []
   } catch (error) {
+    ElMessage.error('加载URI列表失败')
     console.error('Failed to load URIs:', error)
   } finally {
     loading.value = false

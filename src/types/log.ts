@@ -27,3 +27,17 @@ export interface AnalyzeTaskResponse {
   taskId: number
   status: string
 }
+
+export interface Report {
+  id: number
+  status: string
+  createTime: string
+  updateTime: string
+  content?: string
+  userId?: string
+}
+
+export interface LogQueryResponse {
+  logs: LogEntry[]
+  total: number
+}

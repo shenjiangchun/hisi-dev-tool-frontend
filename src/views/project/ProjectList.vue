@@ -55,11 +55,12 @@ import { ref, reactive, onMounted } from 'vue'
 import { Plus } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { projectApi } from '@/api/project'
+import type { ProjectCloneStatus } from '@/types/callchain'
 
 const loading = ref(false)
 const cloning = ref(false)
 const showCloneDialog = ref(false)
-const projects = ref<any[]>([])
+const projects = ref<ProjectCloneStatus[]>([])
 
 const cloneForm = reactive({
   url: '',
@@ -82,6 +83,7 @@ const loadProjects = async () => {
     const res = await projectApi.getProjects()
     projects.value = res.data || []
   } catch (error) {
+    ElMessage.error('加载项目列表失败')
     console.error('Failed to load projects:', error)
   } finally {
     loading.value = false
@@ -106,7 +108,7 @@ const handleClone = async () => {
   }
 }
 
-const handlePull = async (row: any) => {
+const handlePull = async (row: ProjectCloneStatus) => {
   try {
     await projectApi.pull(row.name)
     ElMessage.success('拉取成功')
@@ -116,7 +118,7 @@ const handlePull = async (row: any) => {
   }
 }
 
-const handleDelete = (row: any) => {
+const handleDelete = (row: ProjectCloneStatus) => {
   ElMessageBox.confirm(`确定要删除项目 ${row.name} 吗？`, '确认删除', {
     type: 'warning'
   }).then(async () => {

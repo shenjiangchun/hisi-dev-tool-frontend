@@ -92,10 +92,13 @@
 
 <script setup lang="ts">
 import { ref, reactive } from 'vue'
+import { useRouter } from 'vue-router'
 import { Search } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 import { logAnalysisApi } from '@/api/logAnalysis'
 import type { LogEntry } from '@/types/log'
 
+const router = useRouter()
 const loading = ref(false)
 const logs = ref<LogEntry[]>([])
 
@@ -124,6 +127,10 @@ const getLevelType = (level: string) => {
 }
 
 const handleQuery = async () => {
+  if (!queryForm.appId) {
+    ElMessage.warning('请输入应用ID')
+    return
+  }
   loading.value = true
   try {
     const res = await logAnalysisApi.queryLogs({
@@ -134,6 +141,7 @@ const handleQuery = async () => {
     logs.value = res.data?.logs || []
     pagination.total = res.data?.total || 0
   } catch (error) {
+    ElMessage.error('查询失败，请稍后重试')
     console.error('Query failed:', error)
   } finally {
     loading.value = false
@@ -150,8 +158,18 @@ const handleReset = () => {
   })
 }
 
-const handleAnalyze = (row: LogEntry) => {
-  console.log('Analyze log:', row)
+const handleAnalyze = async (row: LogEntry) => {
+  try {
+    const res = await logAnalysisApi.analyze({
+      logIds: [row.id]
+    })
+    ElMessage.success('分析任务已提交')
+    const taskId = (res as any).data?.taskId || (res as any).taskId
+    router.push(`/log-analysis/report/${taskId}`)
+  } catch (error) {
+    ElMessage.error('提交分析任务失败')
+    console.error('Analyze failed:', error)
+  }
 }
 </script>
 

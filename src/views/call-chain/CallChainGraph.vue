@@ -22,7 +22,9 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
+import type { CallChainNode } from '@/types/callchain'
 import { callChainApi } from '@/api/callChain'
 
 const route = useRoute()
@@ -32,6 +34,8 @@ const uri = route.query.uri as string || ''
 const loading = ref(false)
 const chartRef = ref<HTMLElement>()
 let chart: echarts.ECharts | null = null
+
+const handleResize = () => chart?.resize()
 
 const goBack = () => {
   router.push({
@@ -44,7 +48,7 @@ const refresh = () => {
   loadCallChain()
 }
 
-const initChart = (data: any) => {
+const initChart = (data: CallChainNode) => {
   if (!chartRef.value) return
 
   if (chart) {
@@ -100,6 +104,7 @@ const loadCallChain = async () => {
     })
     initChart(res.data)
   } catch (error) {
+    ElMessage.error('加载调用链数据失败')
     console.error('Failed to load call chain:', error)
   } finally {
     loading.value = false
@@ -108,14 +113,12 @@ const loadCallChain = async () => {
 
 onMounted(() => {
   loadCallChain()
-  window.addEventListener('resize', () => {
-    chart?.resize()
-  })
+  window.addEventListener('resize', handleResize)
 })
 
 onUnmounted(() => {
   chart?.dispose()
-  window.removeEventListener('resize', () => {})
+  window.removeEventListener('resize', handleResize)
 })
 </script>
 

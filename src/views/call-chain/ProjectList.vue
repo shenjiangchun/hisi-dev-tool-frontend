@@ -22,12 +22,14 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { callChainApi } from '@/api/callChain'
+import type { ProjectInfo } from '@/types/callchain'
 
 const router = useRouter()
 const loading = ref(false)
 const searchText = ref('')
-const projects = ref<any[]>([])
+const projects = ref<ProjectInfo[]>([])
 
 const filteredProjects = computed(() => {
   if (!searchText.value) return projects.value
@@ -36,7 +38,7 @@ const filteredProjects = computed(() => {
   )
 })
 
-const handleSelect = (row: any) => {
+const handleSelect = (row: ProjectInfo) => {
   router.push({
     path: '/call-chain/uris',
     query: { project: row.name }
@@ -49,6 +51,7 @@ onMounted(async () => {
     const res = await callChainApi.getProjects()
     projects.value = res.data || []
   } catch (error) {
+    ElMessage.error('加载项目列表失败')
     console.error('Failed to load projects:', error)
   } finally {
     loading.value = false

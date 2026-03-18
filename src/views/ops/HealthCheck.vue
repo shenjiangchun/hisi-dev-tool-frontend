@@ -46,15 +46,16 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { opsApi } from '@/api/ops'
+import type { ServiceHealth, SystemResources } from '@/types/callchain'
 
-const services = ref<any[]>([])
-const systemResources = reactive({
+const services = ref<ServiceHealth[]>([])
+const systemResources = reactive<SystemResources>({
   cpu: 0,
   memory: 0,
   disk: 0
 })
 
-let refreshTimer: number | null = null
+let refreshTimer: ReturnType<typeof setInterval> | null = null
 
 const getProgressColor = (value: number) => {
   if (value < 60) return '#67c23a'
@@ -76,7 +77,7 @@ const loadHealthData = async () => {
 
 onMounted(() => {
   loadHealthData()
-  refreshTimer = window.setInterval(loadHealthData, 30000)
+  refreshTimer = setInterval(loadHealthData, 30000)
 })
 
 onUnmounted(() => {

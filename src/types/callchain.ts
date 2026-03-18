@@ -16,3 +16,36 @@ export interface ProjectInfo {
   language?: string
   updateTime: string
 }
+
+export interface ServiceHealth {
+  name: string
+  healthy: boolean
+  responseTime: number
+  lastCheck: string
+}
+
+export interface SystemResources {
+  cpu: number
+  memory: number
+  disk: number
+}
+
+export interface HealthData {
+  services: ServiceHealth[]
+  resources: SystemResources
+}
+
+export interface ImpactResult {
+  target: string
+  type: string
+  impactCount: number
+  impactedFiles: string[]
+}
+
+export interface ProjectCloneStatus {
+  name: string
+  url: string
+  branch: string
+  status: string
+  updateTime: string
+}

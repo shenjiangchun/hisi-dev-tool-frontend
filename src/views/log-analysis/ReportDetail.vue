@@ -28,13 +28,15 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { logAnalysisApi } from '@/api/logAnalysis'
+import type { Report } from '@/types/log'
 
 const route = useRoute()
 const router = useRouter()
 const reportId = route.params.id as string
 const loading = ref(false)
-const report = ref<any>(null)
+const report = ref<Report | null>(null)
 
 const getStatusType = (status: string) => {
   const types: Record<string, string> = {
@@ -56,6 +58,7 @@ onMounted(async () => {
     const res = await logAnalysisApi.getReport(Number(reportId))
     report.value = res.data
   } catch (error) {
+    ElMessage.error('加载报告失败')
     console.error('Failed to load report:', error)
   } finally {
     loading.value = false
