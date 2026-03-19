@@ -2,12 +2,23 @@
 import { Document, Share, Folder } from '@element-plus/icons-vue'
 import { useRoute } from 'vue-router'
 import { computed } from 'vue'
+import type { Component } from 'vue'
 import { useAppStore } from '@/stores/app'
+
+// Define menu key type that matches availableMenus keys
+type MenuKey = 'call-chain' | 'log-analysis' | 'ops' | 'project-management'
+
+interface MenuItem {
+  index: string
+  title: string
+  icon: Component
+  menuKey: MenuKey
+}
 
 const route = useRoute()
 const appStore = useAppStore()
 
-const baseMenuItems = [
+const baseMenuItems: MenuItem[] = [
   {
     index: '/log-analysis',
     title: '日志分析',
@@ -32,7 +43,7 @@ const baseMenuItems = [
 const menuItems = computed(() =>
   baseMenuItems.map(item => ({
     ...item,
-    disabled: !appStore.availableMenus[item.menuKey as keyof typeof appStore.availableMenus]
+    disabled: !appStore.availableMenus[item.menuKey]
   }))
 )
 </script>
