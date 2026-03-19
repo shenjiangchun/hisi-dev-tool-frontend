@@ -75,3 +75,29 @@ export interface GitRepositoryInfo {
  * This alias exists for backward compatibility with existing code.
  */
 export type ProjectCloneStatus = GitRepositoryInfo
+
+/**
+ * 调用链生成任务状态
+ */
+export interface CallChainTask {
+  /** 任务ID */
+  id: number
+  /** 项目名称 */
+  projectName: string
+  /** 项目完整路径 */
+  projectPath: string
+  /** 任务状态: PENDING/RUNNING/COMPLETED/FAILED */
+  status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED'
+  /** 任务开始时间 */
+  startTime?: string
+  /** 任务结束时间 */
+  endTime?: string
+  /** 失败时的错误信息 */
+  errorMessage?: string
+  /** 已处理的记录数 */
+  recordsProcessed: number
+  /** 创建时间 */
+  createdAt: string
+  /** 更新时间 */
+  updatedAt: string
+}
