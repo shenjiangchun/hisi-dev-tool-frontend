@@ -1,4 +1,5 @@
 import request from '@/utils/request'
+import type { GitRepositoryInfo } from '@/types/callchain'
 
 export const projectApi = {
   // 获取项目列表
@@ -24,5 +25,10 @@ export const projectApi = {
   // 获取项目状态
   getStatus(name: string) {
     return request.get('/projects/status', { params: { name } })
+  },
+
+  // 扫描项目目录中的 Git 仓库
+  scanGitRepos() {
+    return request.get<GitRepositoryInfo[]>('/projects/scan-git-repos')
   }
 }
