@@ -33,10 +33,21 @@
       <template #header>
         <div class="card-header">
           <span>项目管理</span>
-          <el-button type="primary" @click="showCloneDialog = true">
-            <el-icon><Plus /></el-icon>
-            克隆项目
-          </el-button>
+          <div class="header-buttons">
+            <el-button
+              type="success"
+              @click="handleScan"
+              :loading="scanning"
+              :disabled="!appStore.projectDirConfigured"
+            >
+              <el-icon><FolderOpened /></el-icon>
+              扫描仓库
+            </el-button>
+            <el-button type="primary" @click="showCloneDialog = true">
+              <el-icon><Plus /></el-icon>
+              克隆项目
+            </el-button>
+          </div>
         </div>
       </template>
       <el-table :data="projects" v-loading="loading" stripe>
@@ -50,22 +61,30 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column prop="url" label="仓库地址" show-overflow-tooltip />
-        <el-table-column prop="branch" label="分支" width="120" />
-        <el-table-column prop="status" label="状态" width="100">
+        <el-table-column prop="branch" label="分支" width="100" />
+        <el-table-column prop="remoteUrl" label="远程地址" show-overflow-tooltip>
           <template #default="{ row }">
-            <el-tag :type="getStatusType(row.status)">{{ row.status }}</el-tag>
+            {{ row.remoteUrl || row.url || '-' }}
           </template>
         </el-table-column>
-        <el-table-column label="Git" width="80" align="center">
+        <el-table-column label="状态" width="120">
           <template #default="{ row }">
-            <el-tag v-if="hasGit(row)" type="success" size="small">
-              <el-icon><Check /></el-icon>
+            <el-tag :type="getStatusType(row)">{{ getStatusText(row) }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="来源" width="80" align="center">
+          <template #default="{ row }">
+            <el-tag :type="row.source === 'scanned' ? 'primary' : 'info'" size="small">
+              {{ row.source === 'scanned' ? '扫描' : '克隆' }}
             </el-tag>
-            <el-tag v-else type="info" size="small">无</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="updateTime" label="更新时间" width="180" />
+        <el-table-column prop="lastCommitMessage" label="最近提交" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span v-if="row.lastCommitMessage">{{ row.lastCommitMessage }}</span>
+            <span v-else class="text-muted">-</span>
+          </template>
+        </el-table-column>
         <el-table-column label="操作" width="280">
           <template #default="{ row }">
             <el-button
@@ -111,20 +130,21 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
-import { Plus, Check, Select } from '@element-plus/icons-vue'
+import { Plus, Select, FolderOpened } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { projectApi } from '@/api/project'
 import { useAppStore } from '@/stores/app'
 import ProjectDirConfig from '@/components/ProjectDirConfig.vue'
 import GitOperations from '@/components/GitOperations.vue'
-import type { ProjectCloneStatus } from '@/types/callchain'
+import type { GitRepositoryInfo } from '@/types/callchain'
 
 const appStore = useAppStore()
 
 const loading = ref(false)
 const cloning = ref(false)
+const scanning = ref(false)
 const showCloneDialog = ref(false)
-const projects = ref<ProjectCloneStatus[]>([])
+const projects = ref<GitRepositoryInfo[]>([])
 
 const cloneForm = reactive({
   url: '',
@@ -132,18 +152,24 @@ const cloneForm = reactive({
   directory: ''
 })
 
-const getStatusType = (status: string) => {
+const getStatusType = (row: GitRepositoryInfo) => {
+  if (row.source === 'scanned') return row.clean ? 'success' : 'warning'
   const types: Record<string, string> = {
     READY: 'success',
     CLONING: 'warning',
     ERROR: 'danger'
   }
-  return types[status] || 'info'
+  return types[row.status || ''] || 'info'
 }
 
-// Check if project has git (cloned projects should have .git)
-const hasGit = (row: ProjectCloneStatus) => {
-  return row.status === 'READY'
+const getStatusText = (row: GitRepositoryInfo) => {
+  if (row.source === 'scanned') return row.clean ? 'Clean' : 'Modified'
+  return row.status || 'Unknown'
+}
+
+// All repos have git since they were scanned or cloned
+const hasGit = (_row: GitRepositoryInfo) => {
+  return true
 }
 
 // Construct full project path
@@ -152,7 +178,7 @@ const getProjectPath = (projectName: string) => {
 }
 
 // Handle project selection
-const handleSelect = (row: ProjectCloneStatus) => {
+const handleSelect = (row: GitRepositoryInfo) => {
   if (!appStore.projectDirConfigured) {
     ElMessage.warning('请先配置项目目录')
     return
@@ -164,13 +190,50 @@ const handleSelect = (row: ProjectCloneStatus) => {
 const loadProjects = async () => {
   loading.value = true
   try {
-    const res = await projectApi.getProjects()
-    projects.value = res.data || []
+    // Merge scanned repos with existing project list
+    const [scannedRes, listRes] = await Promise.all([
+      projectApi.scanGitRepos(),
+      projectApi.getProjects().catch(() => ({ data: [] }))
+    ])
+
+    const scannedRepos = scannedRes.data || []
+    const existingNames = new Set(scannedRepos.map(r => r.name))
+
+    // Convert legacy projects to GitRepositoryInfo format
+    const legacyProjects = (listRes.data || [])
+      .filter((name: string) => !existingNames.has(name))
+      .map((name: string): GitRepositoryInfo => ({
+        name,
+        path: getProjectPath(name),
+        branch: 'unknown',
+        clean: true,
+        source: 'cloned',
+        status: 'READY'
+      }))
+
+    projects.value = [...scannedRepos, ...legacyProjects]
   } catch (error) {
     ElMessage.error('加载项目列表失败')
     console.error('Failed to load projects:', error)
   } finally {
     loading.value = false
+  }
+}
+
+const handleScan = async () => {
+  if (!appStore.projectDirConfigured) {
+    ElMessage.warning('请先配置项目目录')
+    return
+  }
+  scanning.value = true
+  try {
+    const res = await projectApi.scanGitRepos()
+    projects.value = res.data || []
+    ElMessage.success(`扫描完成，发现 ${projects.value.length} 个仓库`)
+  } catch (error) {
+    ElMessage.error('扫描失败')
+  } finally {
+    scanning.value = false
   }
 }
 
@@ -184,7 +247,7 @@ const handleClone = async () => {
     await projectApi.clone(cloneForm)
     ElMessage.success('克隆成功')
     showCloneDialog.value = false
-    loadProjects()
+    handleScan() // Refresh list after clone
   } catch (error) {
     ElMessage.error('克隆失败')
   } finally {
@@ -192,7 +255,7 @@ const handleClone = async () => {
   }
 }
 
-const handlePull = async (row: ProjectCloneStatus) => {
+const handlePull = async (row: GitRepositoryInfo) => {
   try {
     await projectApi.pull(row.name)
     ElMessage.success('拉取成功')
@@ -202,7 +265,7 @@ const handlePull = async (row: ProjectCloneStatus) => {
   }
 }
 
-const handleDelete = (row: ProjectCloneStatus) => {
+const handleDelete = (row: GitRepositoryInfo) => {
   ElMessageBox.confirm(`确定要删除项目 ${row.name} 吗？`, '确认删除', {
     type: 'warning'
   }).then(async () => {
@@ -221,7 +284,9 @@ const handleDelete = (row: ProjectCloneStatus) => {
 }
 
 onMounted(() => {
-  loadProjects()
+  if (appStore.projectDirConfigured) {
+    handleScan()
+  }
 })
 </script>
 
@@ -236,9 +301,18 @@ onMounted(() => {
   align-items: center;
 }
 
+.header-buttons {
+  display: flex;
+  gap: 8px;
+}
+
 .project-name-cell {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.text-muted {
+  color: #909399;
 }
 </style>
