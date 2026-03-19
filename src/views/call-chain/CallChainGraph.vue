@@ -66,6 +66,7 @@ interface ChainNode {
   className?: string
   methodSignature?: string
   methodBody?: string
+  isNoMatch?: boolean
   children?: ChainNode[]
 }
 
@@ -111,13 +112,16 @@ const handleUriChange = (uri: string) => {
  * 解析方法签名，提取类名和方法名
  * 格式: ClassName.methodName:[参数列表]
  */
-const parseMethodSignature = (signature: string): { className: string; methodName: string; fullSignature: string } => {
-  const colonIndex = signature.indexOf(':')
-  const methodPart = colonIndex > 0 ? signature.substring(0, colonIndex) : signature
+const parseMethodSignature = (signature: string): { className: string; methodName: string; fullSignature: string; isNoMatch: boolean } => {
+  const isNoMatch = signature.startsWith('no match:')
+  const cleanSignature = isNoMatch ? signature.substring(9) : signature
+
+  const colonIndex = cleanSignature.indexOf(':')
+  const methodPart = colonIndex > 0 ? cleanSignature.substring(0, colonIndex) : cleanSignature
   const dotIndex = methodPart.lastIndexOf('.')
   const className = dotIndex > 0 ? methodPart.substring(0, dotIndex) : ''
   const methodName = dotIndex > 0 ? methodPart.substring(dotIndex + 1) : methodPart
-  return { className, methodName, fullSignature: signature }
+  return { className, methodName, fullSignature: signature, isNoMatch }
 }
 
 /**
@@ -142,6 +146,7 @@ const convertToTree = (rawData: CallChainRawData[]): ChainNode | null => {
         className: parent.className,
         methodSignature: item.parentMethod,
         methodBody: item.methodBody,
+        isNoMatch: parent.isNoMatch,
         children: []
       })
     }
@@ -152,6 +157,7 @@ const convertToTree = (rawData: CallChainRawData[]): ChainNode | null => {
         name: child.methodName,
         className: child.className,
         methodSignature: item.childMethod,
+        isNoMatch: child.isNoMatch,
         children: []
       })
     }
