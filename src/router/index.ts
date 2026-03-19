@@ -25,26 +25,22 @@ const routes: RouteRecordRaw[] = [
   },
   {
     path: '/call-chain',
-    name: 'CallChain',
-    component: () => import('@/views/call-chain/ProjectList.vue'),
-    meta: {
-      title: '调用链分析'
-    }
+    redirect: '/call-chain/uri-chain'
   },
   {
-    path: '/call-chain/uris',
-    name: 'UriList',
-    component: () => import('@/views/call-chain/UriList.vue'),
-    meta: {
-      title: 'URI列表'
-    }
-  },
-  {
-    path: '/call-chain/graph',
-    name: 'CallChainGraph',
+    path: '/call-chain/uri-chain',
+    name: 'UriCallChain',
     component: () => import('@/views/call-chain/CallChainGraph.vue'),
     meta: {
-      title: '调用链可视化'
+      title: '接口调用链查询'
+    }
+  },
+  {
+    path: '/call-chain/method-reference',
+    name: 'MethodReference',
+    component: () => import('@/views/call-chain/MethodReferenceGraph.vue'),
+    meta: {
+      title: '方法引用关系分析'
     }
   },
   {

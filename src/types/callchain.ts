@@ -1,7 +1,21 @@
 export interface CallChainNode {
   name: string
-  type: string
+  type?: string
+  className?: string
+  methodSignature?: string
+  methodBody?: string
   children?: CallChainNode[]
+}
+
+/**
+ * 后端返回的原始调用链数据
+ */
+export interface CallChainRawData {
+  depth: number
+  parentMethod: string
+  childMethod: string
+  package: string
+  methodBody?: string
 }
 
 export interface UriInfo {

@@ -79,11 +79,16 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="调用链状态" width="100">
+        <el-table-column label="调用链状态" width="100" align="center">
           <template #default="{ row }">
-            <el-tag :type="getTaskStatusType(getProjectTaskStatus(row.name))" size="small">
-              {{ getTaskStatusText(getProjectTaskStatus(row.name)) }}
-            </el-tag>
+            <div class="status-indicator">
+              <span
+                class="status-dot"
+                :class="getTaskStatusClass(getProjectTaskStatus(row.name))"
+                :title="getTaskStatusTooltip(getProjectTaskStatus(row.name))"
+              ></span>
+              <span class="status-text">{{ getTaskStatusText(getProjectTaskStatus(row.name)) }}</span>
+            </div>
           </template>
         </el-table-column>
         <el-table-column prop="lastCommitMessage" label="最近提交" show-overflow-tooltip>
@@ -107,8 +112,8 @@
               type="warning"
               link
               @click="handleGenerateChain(row)"
-              :loading="getProjectTaskStatus(row.name) === 'RUNNING'"
-              :disabled="!appStore.projectDirConfigured"
+              :loading="generatingProjects.has(row.name)"
+              :disabled="!appStore.projectDirConfigured || isTaskRunning(getProjectTaskStatus(row.name))"
             >
               <el-icon><Connection /></el-icon>
               生成调用链
@@ -173,17 +178,30 @@ const cloneForm = reactive({
 
 // Task status tracking for call chain generation
 const taskStatusMap = ref<Record<string, CallChainTask>>({})
+// Track which projects are currently being generated (waiting for API response)
+const generatingProjects = ref<Set<string>>(new Set())
 let pollingTimer: ReturnType<typeof setInterval> | null = null
 
-// Status style
-const getTaskStatusType = (status?: string) => {
-  const types: Record<string, string> = {
-    PENDING: 'info',
-    RUNNING: 'warning',
-    COMPLETED: 'success',
-    FAILED: 'danger'
+// Status dot class
+const getTaskStatusClass = (status?: string) => {
+  const classes: Record<string, string> = {
+    PENDING: 'status-pending',
+    RUNNING: 'status-running',
+    COMPLETED: 'status-completed',
+    FAILED: 'status-failed'
   }
-  return types[status || ''] || 'info'
+  return classes[status || ''] || 'status-none'
+}
+
+// Status tooltip
+const getTaskStatusTooltip = (status?: string) => {
+  const tooltips: Record<string, string> = {
+    PENDING: '等待中',
+    RUNNING: '生成中',
+    COMPLETED: '已完成',
+    FAILED: '生成失败'
+  }
+  return tooltips[status || ''] || '未生成调用链'
 }
 
 // Status text
@@ -197,30 +215,54 @@ const getTaskStatusText = (status?: string) => {
   return texts[status || ''] || '未生成'
 }
 
-// Start polling
+// Check if task is running
+const isTaskRunning = (status?: string) => {
+  return status === 'PENDING' || status === 'RUNNING'
+}
+
+// Start polling when there are running tasks
 const startPolling = () => {
-  if (pollingTimer) return
+  if (pollingTimer) {
+    console.log('Polling already running, skip')
+    return
+  }
+  console.log('Starting polling for task status updates...')
   pollingTimer = setInterval(async () => {
     const runningProjects = Object.values(taskStatusMap.value)
       .filter(t => t.status === 'PENDING' || t.status === 'RUNNING')
       .map(t => t.projectName)
 
     if (runningProjects.length === 0) {
+      console.log('No running tasks, stopping polling')
       stopPolling()
       return
     }
 
+    console.log('Polling status for projects:', runningProjects)
     try {
-      const res = await taskApi.getStatus(runningProjects)
-      if (res.data) {
-        res.data.forEach(task => {
-          taskStatusMap.value[task.projectName] = task
+      const tasks = await taskApi.getStatus(runningProjects)
+      if (tasks && Array.isArray(tasks)) {
+        // Create new object to ensure reactivity
+        const newMap = { ...taskStatusMap.value }
+        tasks.forEach(task => {
+          newMap[task.projectName] = task
+          console.log(`Task ${task.projectName} status: ${task.status}`)
         })
+        taskStatusMap.value = newMap
+
+        // Check if all tasks are now complete, stop polling
+        const stillRunning = tasks.some(t => t.status === 'PENDING' || t.status === 'RUNNING')
+        if (!stillRunning) {
+          console.log('All tasks completed, stopping polling')
+          stopPolling()
+        }
       }
     } catch (e) {
       console.error('Failed to poll task status:', e)
     }
-  }, 20000)
+  }, 20000) // Poll every 20 seconds
+
+  console.log('Polling timer started, interval: 20s')
 }
 
 // Stop polling
@@ -238,21 +280,80 @@ const handleGenerateChain = async (row: GitRepositoryInfo) => {
     return
   }
 
+  // Mark as generating
+  generatingProjects.value.add(row.name)
+
   try {
-    const res = await taskApi.startGenerate(row.name)
-    if (res.data) {
-      taskStatusMap.value[row.name] = res.data
+    const task = await taskApi.startGenerate(row.name)
+    if (task) {
+      // Use Object.assign to ensure reactivity
+      taskStatusMap.value = {
+        ...taskStatusMap.value,
+        [row.name]: task
+      }
       ElMessage.success('已开始生成调用链')
+      // Start polling after first task created
       startPolling()
     }
-  } catch (e) {
-    ElMessage.error('启动任务失败')
+  } catch (error: any) {
+    // Handle different error types
+    if (error.response?.status === 409) {
+      // Task already running
+      const errorData = error.response.data
+      ElMessage.warning(errorData?.message || '该项目已有任务在执行中')
+      // Update status map with the running task
+      if (errorData?.runningTask) {
+        taskStatusMap.value = {
+          ...taskStatusMap.value,
+          [row.name]: errorData.runningTask
+        }
+        // Start polling for the running task
+        startPolling()
+      }
+    } else if (error.response?.status === 400) {
+      // Invalid project path
+      const errorData = error.response.data
+      ElMessage.error(errorData?.message || '项目路径不存在')
+    } else {
+      ElMessage.error('启动任务失败')
+    }
+  } finally {
+    generatingProjects.value.delete(row.name)
   }
 }
 
 // Get task status for a project
 const getProjectTaskStatus = (projectName: string) => {
   return taskStatusMap.value[projectName]?.status
+}
+
+// Load all project task statuses
+const loadAllTaskStatuses = async () => {
+  if (projects.value.length === 0) return
+
+  const projectNames = projects.value.map(p => p.name)
+  try {
+    const tasks = await taskApi.getStatus(projectNames)
+    if (tasks && Array.isArray(tasks) && tasks.length > 0) {
+      // Create new object to ensure reactivity
+      const newMap: Record<string, CallChainTask> = {}
+      let hasRunning = false
+      tasks.forEach(task => {
+        newMap[task.projectName] = task
+        // Check directly if task is running (computed may not be updated yet)
+        if (task.status === 'PENDING' || task.status === 'RUNNING') {
+          hasRunning = true
+        }
+      })
+      taskStatusMap.value = newMap
+      // Start polling if any task is running
+      if (hasRunning) {
+        startPolling()
+      }
+    }
+  } catch (e) {
+    console.error('Failed to load task statuses:', e)
+  }
 }
 
 const getStatusType = (row: GitRepositoryInfo) => {
@@ -315,6 +416,9 @@ const loadProjects = async () => {
       }))
 
     projects.value = [...scannedRepos, ...legacyProjects]
+
+    // Load task statuses after projects are loaded
+    await loadAllTaskStatuses()
   } catch (error) {
     ElMessage.error('加载项目列表失败')
     console.error('Failed to load projects:', error)
@@ -333,6 +437,8 @@ const handleScan = async () => {
     const res = await projectApi.scanGitRepos()
     projects.value = res.data || []
     ElMessage.success(`扫描完成，发现 ${projects.value.length} 个仓库`)
+    // Load task statuses after scan
+    await loadAllTaskStatuses()
   } catch (error) {
     ElMessage.error('扫描失败')
   } finally {
@@ -421,5 +527,60 @@ onUnmounted(() => {
 
 .text-muted {
   color: #909399;
+}
+
+/* Status indicator styles */
+.status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.status-none {
+  background-color: #c0c4cc;
+  box-shadow: 0 0 4px rgba(192, 196, 204, 0.5);
+}
+
+.status-pending {
+  background-color: #e6a23c;
+  box-shadow: 0 0 6px rgba(230, 162, 60, 0.6);
+  animation: pulse 1.5s infinite;
+}
+
+.status-running {
+  background-color: #e6a23c;
+  box-shadow: 0 0 8px rgba(230, 162, 60, 0.8);
+  animation: pulse 1s infinite;
+}
+
+.status-completed {
+  background-color: #67c23a;
+  box-shadow: 0 0 4px rgba(103, 194, 58, 0.5);
+}
+
+.status-failed {
+  background-color: #f56c6c;
+  box-shadow: 0 0 4px rgba(245, 108, 108, 0.5);
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.status-text {
+  font-size: 12px;
+  color: #606266;
 }
 </style>
