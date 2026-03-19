@@ -97,6 +97,11 @@ router.beforeEach(async (to, _from, next) => {
   const appStore = useAppStore()
   if (!appStore.projectDir && !appStore.configLoading) {
     await appStore.loadProjectDir()
+    // Check if there was an error loading config
+    if (appStore.configError) {
+      console.error('Failed to load project configuration:', appStore.configError)
+      // Still proceed - user can try to configure manually
+    }
   }
 
   // Check menu availability
