@@ -79,6 +79,13 @@
             </el-tag>
           </template>
         </el-table-column>
+        <el-table-column label="调用链状态" width="100">
+          <template #default="{ row }">
+            <el-tag :type="getTaskStatusType(getProjectTaskStatus(row.name))" size="small">
+              {{ getTaskStatusText(getProjectTaskStatus(row.name)) }}
+            </el-tag>
+          </template>
+        </el-table-column>
         <el-table-column prop="lastCommitMessage" label="最近提交" show-overflow-tooltip>
           <template #default="{ row }">
             <span v-if="row.lastCommitMessage">{{ row.lastCommitMessage }}</span>
@@ -95,6 +102,16 @@
             >
               <el-icon><Select /></el-icon>
               选择
+            </el-button>
+            <el-button
+              type="warning"
+              link
+              @click="handleGenerateChain(row)"
+              :loading="getProjectTaskStatus(row.name) === 'RUNNING'"
+              :disabled="!appStore.projectDirConfigured"
+            >
+              <el-icon><Connection /></el-icon>
+              生成调用链
             </el-button>
             <GitOperations
               v-if="hasGit(row) && appStore.projectDirConfigured"
@@ -129,10 +146,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
-import { Plus, Select, FolderOpened } from '@element-plus/icons-vue'
+import { ref, reactive, onMounted, onUnmounted } from 'vue'
+import { Plus, Select, FolderOpened, Connection } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { projectApi } from '@/api/project'
+import { taskApi } from '@/api/task'
+import type { CallChainTask } from '@/types/callchain'
 import { useAppStore } from '@/stores/app'
 import ProjectDirConfig from '@/components/ProjectDirConfig.vue'
 import GitOperations from '@/components/GitOperations.vue'
@@ -151,6 +170,90 @@ const cloneForm = reactive({
   branch: 'master',
   directory: ''
 })
+
+// Task status tracking for call chain generation
+const taskStatusMap = ref<Record<string, CallChainTask>>({})
+let pollingTimer: ReturnType<typeof setInterval> | null = null
+
+// Status style
+const getTaskStatusType = (status?: string) => {
+  const types: Record<string, string> = {
+    PENDING: 'info',
+    RUNNING: 'warning',
+    COMPLETED: 'success',
+    FAILED: 'danger'
+  }
+  return types[status || ''] || 'info'
+}
+
+// Status text
+const getTaskStatusText = (status?: string) => {
+  const texts: Record<string, string> = {
+    PENDING: '等待中',
+    RUNNING: '生成中',
+    COMPLETED: '已完成',
+    FAILED: '失败'
+  }
+  return texts[status || ''] || '未生成'
+}
+
+// Start polling
+const startPolling = () => {
+  if (pollingTimer) return
+  pollingTimer = setInterval(async () => {
+    const runningProjects = Object.values(taskStatusMap.value)
+      .filter(t => t.status === 'PENDING' || t.status === 'RUNNING')
+      .map(t => t.projectName)
+
+    if (runningProjects.length === 0) {
+      stopPolling()
+      return
+    }
+
+    try {
+      const res = await taskApi.getStatus(runningProjects)
+      if (res.data) {
+        res.data.forEach(task => {
+          taskStatusMap.value[task.projectName] = task
+        })
+      }
+    } catch (e) {
+      console.error('Failed to poll task status:', e)
+    }
+  }, 20000)
+}
+
+// Stop polling
+const stopPolling = () => {
+  if (pollingTimer) {
+    clearInterval(pollingTimer)
+    pollingTimer = null
+  }
+}
+
+// Generate call chain
+const handleGenerateChain = async (row: GitRepositoryInfo) => {
+  if (!appStore.projectDirConfigured) {
+    ElMessage.warning('请先配置项目目录')
+    return
+  }
+
+  try {
+    const res = await taskApi.startGenerate(row.name)
+    if (res.data) {
+      taskStatusMap.value[row.name] = res.data
+      ElMessage.success('已开始生成调用链')
+      startPolling()
+    }
+  } catch (e) {
+    ElMessage.error('启动任务失败')
+  }
+}
+
+// Get task status for a project
+const getProjectTaskStatus = (projectName: string) => {
+  return taskStatusMap.value[projectName]?.status
+}
 
 const getStatusType = (row: GitRepositoryInfo) => {
   if (row.source === 'scanned') return row.clean ? 'success' : 'warning'
@@ -287,6 +390,10 @@ onMounted(() => {
   if (appStore.projectDirConfigured) {
     handleScan()
   }
+})
+
+onUnmounted(() => {
+  stopPolling()
 })
 </script>
 
