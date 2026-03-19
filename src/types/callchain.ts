@@ -42,10 +42,20 @@ export interface ImpactResult {
   impactedFiles: string[]
 }
 
-export interface ProjectCloneStatus {
+export interface GitRepositoryInfo {
   name: string
-  url: string
+  path: string
   branch: string
-  status: string
-  updateTime: string
+  remoteUrl?: string
+  clean: boolean
+  source: 'scanned' | 'cloned'
+  lastCommitMessage?: string
+  lastCommitDate?: string
+  // Legacy fields for backward compatibility
+  url?: string
+  status?: string
+  updateTime?: string
 }
+
+// Backward compatibility alias
+export type ProjectCloneStatus = GitRepositoryInfo
