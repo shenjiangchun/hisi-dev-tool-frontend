@@ -1,31 +1,40 @@
 <script setup lang="ts">
-import { Document, Share, Folder, Monitor } from '@element-plus/icons-vue'
+import { Document, Share, Folder } from '@element-plus/icons-vue'
 import { useRoute } from 'vue-router'
+import { computed } from 'vue'
+import { useAppStore } from '@/stores/app'
 
 const route = useRoute()
+const appStore = useAppStore()
 
-const menuItems = [
+const baseMenuItems = [
   {
     index: '/log-analysis',
     title: '日志分析',
-    icon: Document
+    icon: Document,
+    menuKey: 'log-analysis'
   },
   {
     index: '/call-chain',
     title: '调用链分析',
-    icon: Share
+    icon: Share,
+    menuKey: 'call-chain'
   },
   {
     index: '/project',
     title: '项目管理',
-    icon: Folder
-  },
-  {
-    index: '/ops',
-    title: '运维监控',
-    icon: Monitor
+    icon: Folder,
+    menuKey: 'project-management'
   }
+  // Ops monitoring removed - permanently disabled
 ]
+
+const menuItems = computed(() =>
+  baseMenuItems.map(item => ({
+    ...item,
+    disabled: !appStore.availableMenus[item.menuKey as keyof typeof appStore.availableMenus]
+  }))
+)
 </script>
 
 <template>
@@ -39,6 +48,7 @@ const menuItems = [
         v-for="item in menuItems"
         :key="item.index"
         :index="item.index"
+        :disabled="item.disabled"
       >
         <el-icon>
           <component :is="item.icon" />
@@ -82,5 +92,10 @@ const menuItems = [
 
 .sidebar-menu :deep(.el-menu-item .el-icon) {
   color: inherit;
+}
+
+.sidebar-menu :deep(.el-menu-item.is-disabled) {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 </style>

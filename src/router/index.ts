@@ -1,9 +1,11 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
+import { ElMessage } from 'element-plus'
+import { useAppStore } from '@/stores/app'
 
 const routes: RouteRecordRaw[] = [
   {
     path: '/',
-    redirect: '/log-analysis'
+    redirect: '/project'
   },
   {
     path: '/log-analysis',
@@ -84,11 +86,38 @@ const router = createRouter({
   routes
 })
 
-router.beforeEach((to, _from, next) => {
+router.beforeEach(async (to, _from, next) => {
+  // Set document title
   const title = to.meta.title as string
   if (title) {
     document.title = `${title} - HiSi Dev Tool`
   }
+
+  // Load config on first navigation
+  const appStore = useAppStore()
+  if (!appStore.projectDir && !appStore.configLoading) {
+    await appStore.loadProjectDir()
+  }
+
+  // Check menu availability
+  const menuAvailability = appStore.availableMenus
+
+  // Block access to restricted pages
+  if (to.path.startsWith('/call-chain') && !menuAvailability['call-chain']) {
+    ElMessage.warning('请先配置项目目录并选择项目')
+    return next('/project')
+  }
+
+  if (to.path.startsWith('/log-analysis') && !menuAvailability['log-analysis']) {
+    ElMessage.warning('请先配置项目目录并选择项目')
+    return next('/project')
+  }
+
+  // Redirect ops to project (ops is permanently disabled)
+  if (to.path.startsWith('/ops')) {
+    return next('/project')
+  }
+
   next()
 })
 
