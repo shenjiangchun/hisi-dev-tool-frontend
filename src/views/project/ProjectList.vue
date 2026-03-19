@@ -1,5 +1,34 @@
 <template>
   <div class="project-list">
+    <!-- Project Directory Configuration -->
+    <ProjectDirConfig />
+
+    <!-- Guidance Prompts -->
+    <el-alert
+      v-if="!appStore.projectDirConfigured"
+      title="请先配置项目目录"
+      type="warning"
+      show-icon
+      :closable="false"
+      class="guidance-alert"
+    />
+    <el-alert
+      v-else-if="!appStore.projectSelected"
+      title="请选择一个项目以开始分析"
+      type="info"
+      show-icon
+      :closable="false"
+      class="guidance-alert"
+    />
+    <el-alert
+      v-else
+      :title="`已选择项目: ${appStore.selectedProject}`"
+      type="success"
+      show-icon
+      :closable="false"
+      class="guidance-alert"
+    />
+
     <el-card>
       <template #header>
         <div class="card-header">
@@ -11,7 +40,16 @@
         </div>
       </template>
       <el-table :data="projects" v-loading="loading" stripe>
-        <el-table-column prop="name" label="项目名称" />
+        <el-table-column prop="name" label="项目名称">
+          <template #default="{ row }">
+            <div class="project-name-cell">
+              <span>{{ row.name }}</span>
+              <el-tag v-if="appStore.selectedProject === row.name" type="success" size="small">
+                已选择
+              </el-tag>
+            </div>
+          </template>
+        </el-table-column>
         <el-table-column prop="url" label="仓库地址" show-overflow-tooltip />
         <el-table-column prop="branch" label="分支" width="120" />
         <el-table-column prop="status" label="状态" width="100">
@@ -19,9 +57,30 @@
             <el-tag :type="getStatusType(row.status)">{{ row.status }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="updateTime" label="更新时间" width="180" />
-        <el-table-column label="操作" width="150">
+        <el-table-column label="Git" width="80" align="center">
           <template #default="{ row }">
+            <el-tag v-if="hasGit(row)" type="success" size="small">
+              <el-icon><Check /></el-icon>
+            </el-tag>
+            <el-tag v-else type="info" size="small">无</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="updateTime" label="更新时间" width="180" />
+        <el-table-column label="操作" width="280">
+          <template #default="{ row }">
+            <el-button
+              type="primary"
+              link
+              @click="handleSelect(row)"
+              :disabled="!appStore.projectDirConfigured"
+            >
+              <el-icon><Select /></el-icon>
+              选择
+            </el-button>
+            <GitOperations
+              v-if="hasGit(row) && appStore.projectDirConfigured"
+              :project-path="getProjectPath(row.name)"
+            />
             <el-button type="primary" link @click="handlePull(row)">拉取</el-button>
             <el-button type="danger" link @click="handleDelete(row)">删除</el-button>
           </template>
@@ -29,7 +88,7 @@
       </el-table>
     </el-card>
 
-    <!-- 克隆对话框 -->
+    <!-- Clone Dialog -->
     <el-dialog v-model="showCloneDialog" title="克隆项目" width="500px">
       <el-form :model="cloneForm" label-width="100px">
         <el-form-item label="仓库地址">
@@ -52,10 +111,15 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
-import { Plus } from '@element-plus/icons-vue'
+import { Plus, Check, Select } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { projectApi } from '@/api/project'
+import { useAppStore } from '@/stores/app'
+import ProjectDirConfig from '@/components/ProjectDirConfig.vue'
+import GitOperations from '@/components/GitOperations.vue'
 import type { ProjectCloneStatus } from '@/types/callchain'
+
+const appStore = useAppStore()
 
 const loading = ref(false)
 const cloning = ref(false)
@@ -75,6 +139,26 @@ const getStatusType = (status: string) => {
     ERROR: 'danger'
   }
   return types[status] || 'info'
+}
+
+// Check if project has git (cloned projects should have .git)
+const hasGit = (row: ProjectCloneStatus) => {
+  return row.status === 'READY'
+}
+
+// Construct full project path
+const getProjectPath = (projectName: string) => {
+  return `${appStore.projectDir}/${projectName}`
+}
+
+// Handle project selection
+const handleSelect = (row: ProjectCloneStatus) => {
+  if (!appStore.projectDirConfigured) {
+    ElMessage.warning('请先配置项目目录')
+    return
+  }
+  appStore.selectProject(row.name)
+  ElMessage.success(`已选择项目: ${row.name}`)
 }
 
 const loadProjects = async () => {
@@ -125,6 +209,10 @@ const handleDelete = (row: ProjectCloneStatus) => {
     try {
       await projectApi.delete(row.name)
       ElMessage.success('删除成功')
+      // Clear selection if deleted project was selected
+      if (appStore.selectedProject === row.name) {
+        appStore.clearSelectedProject()
+      }
       loadProjects()
     } catch (error) {
       ElMessage.error('删除失败')
@@ -138,9 +226,19 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.guidance-alert {
+  margin-bottom: 16px;
+}
+
 .card-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.project-name-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 </style>
