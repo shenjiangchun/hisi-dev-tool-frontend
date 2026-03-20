@@ -3,49 +3,44 @@
     <el-card header="日志查询">
       <el-form :model="queryForm" label-width="100px">
         <el-row :gutter="20">
-          <el-col :span="8">
-            <el-form-item label="应用ID">
-              <el-input v-model="queryForm.appId" placeholder="请输入应用ID" />
+          <el-col :span="12">
+            <el-form-item label="DSL查询">
+              <el-input
+                v-model="queryForm.dslQuery"
+                type="textarea"
+                :rows="4"
+                placeholder='输入自定义DSL查询，例如: {"size":10,"query":{"match":{"level":"ERROR"}}}'
+              />
             </el-form-item>
           </el-col>
-          <el-col :span="8">
-            <el-form-item label="日志级别">
-              <el-select v-model="queryForm.logLevel" clearable placeholder="请选择">
-                <el-option label="ERROR" value="ERROR" />
-                <el-option label="WARN" value="WARN" />
-                <el-option label="INFO" value="INFO" />
-                <el-option label="DEBUG" value="DEBUG" />
-              </el-select>
+          <el-col :span="12">
+            <el-form-item label="快速筛选">
+              <div class="quick-filters">
+                <el-select v-model="queryForm.logLevel" clearable placeholder="日志级别" style="width: 120px">
+                  <el-option label="ERROR" value="ERROR" />
+                  <el-option label="WARN" value="WARN" />
+                  <el-option label="INFO" value="INFO" />
+                  <el-option label="DEBUG" value="DEBUG" />
+                </el-select>
+                <el-input v-model="queryForm.keyword" placeholder="关键词" style="width: 150px" clearable />
+                <el-input v-model="queryForm.traceId" placeholder="TraceID" style="width: 150px" clearable />
+              </div>
             </el-form-item>
-          </el-col>
-          <el-col :span="8">
-            <el-form-item label="关键词">
-              <el-input v-model="queryForm.keyword" placeholder="请输入关键词" />
-            </el-form-item>
-          </el-col>
-        </el-row>
-        <el-row :gutter="20">
-          <el-col :span="8">
-            <el-form-item label="开始时间">
+            <el-form-item label="时间范围">
               <el-date-picker
                 v-model="queryForm.startTime"
                 type="datetime"
-                placeholder="选择开始时间"
-                style="width: 100%"
+                placeholder="开始时间"
+                style="width: 180px"
               />
-            </el-form-item>
-          </el-col>
-          <el-col :span="8">
-            <el-form-item label="结束时间">
+              <span style="margin: 0 8px;">至</span>
               <el-date-picker
                 v-model="queryForm.endTime"
                 type="datetime"
-                placeholder="选择结束时间"
-                style="width: 100%"
+                placeholder="结束时间"
+                style="width: 180px"
               />
             </el-form-item>
-          </el-col>
-          <el-col :span="8">
             <el-form-item>
               <el-button type="primary" @click="handleQuery" :loading="loading">
                 <el-icon><Search /></el-icon>
@@ -59,23 +54,65 @@
     </el-card>
 
     <el-card header="查询结果" class="mt-4">
-      <el-table :data="logs" v-loading="loading" stripe>
-        <el-table-column prop="id" label="ID" width="80" />
+      <template #header>
+        <div class="result-header">
+          <span>查询结果</span>
+          <span class="result-count" v-if="pagination.total > 0">共 {{ pagination.total }} 条</span>
+        </div>
+      </template>
+
+      <el-table :data="logs" v-loading="loading" stripe style="width: 100%">
         <el-table-column prop="level" label="级别" width="80">
           <template #default="{ row }">
-            <el-tag :type="getLevelType(row.level)">{{ row.level }}</el-tag>
+            <el-tag :type="getLevelType(row.level)" size="small">{{ row.level || '-' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="message" label="消息" show-overflow-tooltip />
-        <el-table-column prop="timestamp" label="时间" width="180" />
-        <el-table-column label="操作" width="100">
+        <el-table-column prop="timestamp" label="时间" width="180">
           <template #default="{ row }">
-            <el-button type="primary" link @click="handleAnalyze(row)">
+            {{ formatTime(row.timestamp) }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="serviceName" label="服务" width="150" show-overflow-tooltip>
+          <template #default="{ row }">
+            {{ row.serviceName || '-' }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="traceId" label="TraceID" width="140" show-overflow-tooltip>
+          <template #default="{ row }">
+            <el-tooltip :content="row.traceId" placement="top" v-if="row.traceId">
+              <span class="trace-id">{{ row.traceId }}</span>
+            </el-tooltip>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="message" label="消息" min-width="300" show-overflow-tooltip>
+          <template #default="{ row }">
+            <div class="log-message">
+              <el-tag v-if="row.errorType" type="danger" size="small" class="error-tag">{{ row.errorType }}</el-tag>
+              <span>{{ row.message }}</span>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column prop="hostname" label="主机" width="150" show-overflow-tooltip>
+          <template #default="{ row }">
+            <el-tooltip :content="row.hostname" placement="top" v-if="row.hostname">
+              <span>{{ shortText(row.hostname, 15) }}</span>
+            </el-tooltip>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="120" fixed="right">
+          <template #default="{ row }">
+            <el-button type="primary" link size="small" @click="handleAnalyze(row)">
               分析
+            </el-button>
+            <el-button type="info" link size="small" @click="showDetail(row)">
+              详情
             </el-button>
           </template>
         </el-table-column>
       </el-table>
+
       <el-pagination
         class="mt-4"
         v-model:current-page="pagination.page"
@@ -87,6 +124,44 @@
         @current-change="handleQuery"
       />
     </el-card>
+
+    <!-- 日志详情弹窗 -->
+    <el-dialog v-model="detailVisible" title="日志详情" width="800px">
+      <div class="log-detail" v-if="selectedLog">
+        <el-descriptions :column="2" border>
+          <el-descriptions-item label="时间">{{ selectedLog.timestamp }}</el-descriptions-item>
+          <el-descriptions-item label="级别">
+            <el-tag :type="getLevelType(selectedLog.level)">{{ selectedLog.level }}</el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="服务">{{ selectedLog.serviceName || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="TraceID">{{ selectedLog.traceId || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="主机">{{ selectedLog.hostname || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="Pod">{{ selectedLog.podName || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="命名空间">{{ selectedLog.namespace || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="错误类型">{{ selectedLog.errorType || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="日志源" :span="2">{{ selectedLog.logSource || '-' }}</el-descriptions-item>
+        </el-descriptions>
+
+        <div class="detail-section" v-if="selectedLog.message">
+          <div class="section-title">日志消息</div>
+          <pre class="message-content">{{ selectedLog.message }}</pre>
+        </div>
+
+        <div class="detail-section" v-if="selectedLog.stackTrace">
+          <div class="section-title">堆栈信息</div>
+          <pre class="stack-content">{{ selectedLog.stackTrace }}</pre>
+        </div>
+
+        <div class="detail-section" v-if="selectedLog.rawFields">
+          <div class="section-title">原始字段</div>
+          <el-collapse>
+            <el-collapse-item title="点击展开查看所有字段">
+              <pre class="raw-fields">{{ JSON.stringify(selectedLog.rawFields, null, 2) }}</pre>
+            </el-collapse-item>
+          </el-collapse>
+        </div>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -101,11 +176,14 @@ import type { LogEntry } from '@/types/log'
 const router = useRouter()
 const loading = ref(false)
 const logs = ref<LogEntry[]>([])
+const detailVisible = ref(false)
+const selectedLog = ref<LogEntry | null>(null)
 
 const queryForm = reactive({
-  appId: '',
+  dslQuery: '',
   logLevel: 'ERROR',
   keyword: '',
+  traceId: '',
   startTime: null as Date | null,
   endTime: null as Date | null
 })
@@ -116,32 +194,57 @@ const pagination = reactive({
   total: 0
 })
 
-const getLevelType = (level: string) => {
+const getLevelType = (level: string | null) => {
+  if (!level) return ''
   const types: Record<string, string> = {
     ERROR: 'danger',
     WARN: 'warning',
     INFO: 'info',
-    DEBUG: ''
+    DEBUG: '',
+    SEVERE: 'danger',
+    FATAL: 'danger'
   }
-  return types[level] || ''
+  return types[level.toUpperCase()] || ''
+}
+
+const formatTime = (timestamp: string | null) => {
+  if (!timestamp) return '-'
+  try {
+    return new Date(timestamp).toLocaleString('zh-CN')
+  } catch {
+    return timestamp
+  }
+}
+
+const shortText = (text: string | null, maxLen: number) => {
+  if (!text) return '-'
+  return text.length > maxLen ? text.substring(0, maxLen) + '...' : text
 }
 
 const handleQuery = async () => {
-  if (!queryForm.appId) {
-    ElMessage.warning('请输入应用ID')
-    return
-  }
   loading.value = true
   try {
-    const res = await logAnalysisApi.queryLogs({
-      ...queryForm,
-      page: pagination.page,
-      pageSize: pagination.pageSize
-    })
+    const params: any = {
+      size: pagination.pageSize
+    }
+
+    // 如果有自定义 DSL，使用它
+    if (queryForm.dslQuery && queryForm.dslQuery.trim()) {
+      params.dslQuery = queryForm.dslQuery.trim()
+    } else {
+      // 否则使用快速筛选条件
+      if (queryForm.logLevel) params.logLevel = queryForm.logLevel
+      if (queryForm.keyword) params.keyword = queryForm.keyword
+      if (queryForm.traceId) params.traceId = queryForm.traceId
+      if (queryForm.startTime) params.startTime = queryForm.startTime
+      if (queryForm.endTime) params.endTime = queryForm.endTime
+    }
+
+    const res = await logAnalysisApi.queryLogs(params)
     logs.value = res.data?.logs || []
     pagination.total = res.data?.total || 0
-  } catch (error) {
-    ElMessage.error('查询失败，请稍后重试')
+  } catch (error: any) {
+    ElMessage.error(`查询失败: ${error.message || '请稍后重试'}`)
     console.error('Query failed:', error)
   } finally {
     loading.value = false
@@ -150,24 +253,39 @@ const handleQuery = async () => {
 
 const handleReset = () => {
   Object.assign(queryForm, {
-    appId: '',
+    dslQuery: '',
     logLevel: 'ERROR',
     keyword: '',
+    traceId: '',
     startTime: null,
     endTime: null
   })
+  pagination.page = 1
+  logs.value = []
+  pagination.total = 0
+}
+
+const showDetail = (row: LogEntry) => {
+  selectedLog.value = row
+  detailVisible.value = true
 }
 
 const handleAnalyze = async (row: LogEntry) => {
   try {
     const res = await logAnalysisApi.analyze({
-      logIds: [row.id]
+      message: row.message || undefined,
+      stackTrace: row.stackTrace || undefined,
+      errorType: row.errorType || undefined,
+      traceId: row.traceId || undefined,
+      serviceName: row.serviceName || undefined
     })
     ElMessage.success('分析任务已提交')
-    const taskId = (res as any).data?.taskId || (res as any).taskId
-    router.push(`/log-analysis/report/${taskId}`)
-  } catch (error) {
-    ElMessage.error('提交分析任务失败')
+    const reportId = (res as any).data?.reportId || (res as any).reportId
+    if (reportId) {
+      router.push(`/log-analysis/report/${reportId}`)
+    }
+  } catch (error: any) {
+    ElMessage.error(`提交分析任务失败: ${error.message || '请稍后重试'}`)
     console.error('Analyze failed:', error)
   }
 }
@@ -176,5 +294,95 @@ const handleAnalyze = async (row: LogEntry) => {
 <style scoped>
 .mt-4 {
   margin-top: 16px;
+}
+
+.quick-filters {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.result-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.result-count {
+  font-size: 13px;
+  color: #909399;
+}
+
+.trace-id {
+  font-family: monospace;
+  font-size: 12px;
+  color: #409eff;
+  cursor: pointer;
+}
+
+.log-message {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.error-tag {
+  flex-shrink: 0;
+}
+
+.log-detail {
+  padding: 8px 0;
+}
+
+.detail-section {
+  margin-top: 20px;
+}
+
+.section-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: #303133;
+  margin-bottom: 8px;
+  padding-left: 8px;
+  border-left: 3px solid #409eff;
+}
+
+.message-content {
+  background: #f5f7fa;
+  padding: 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.stack-content {
+  background: #1e1e1e;
+  color: #d4d4d4;
+  padding: 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: monospace;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.raw-fields {
+  background: #f5f7fa;
+  padding: 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: monospace;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 400px;
+  overflow-y: auto;
 }
 </style>
