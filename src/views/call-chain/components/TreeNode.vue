@@ -58,7 +58,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'select', node: ChainNode): void
-  (e: 'contextmenu', event: MouseEvent, node: ChainNode): void
+  (e: 'contextmenu', payload: { event: MouseEvent; node: ChainNode }): void
 }>()
 
 const expanded = ref(props.level < 3)
@@ -97,7 +97,7 @@ const handleSelect = () => {
 }
 
 const handleContextMenu = (event: MouseEvent) => {
-  emit('contextmenu', event, props.node)
+  emit('contextmenu', { event, node: props.node })
 }
 </script>
 

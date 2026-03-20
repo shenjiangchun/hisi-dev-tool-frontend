@@ -379,13 +379,25 @@ const handleSelect = (node: ChainNode) => {
 }
 
 // 右键菜单处理
-const handleContextMenu = (event: MouseEvent, node: ChainNode) => {
+const handleContextMenu = (payload: { event: MouseEvent; node: ChainNode } | MouseEvent, node?: ChainNode) => {
+  // 兼容两种调用方式
+  let event: MouseEvent
+  let targetNode: ChainNode
+
+  if ('event' in payload && 'node' in payload) {
+    event = payload.event
+    targetNode = payload.node
+  } else {
+    event = payload as MouseEvent
+    targetNode = node!
+  }
+
   event.preventDefault()
   contextMenu.value = {
     visible: true,
     x: event.clientX,
     y: event.clientY,
-    node: node
+    node: targetNode
   }
 }
 

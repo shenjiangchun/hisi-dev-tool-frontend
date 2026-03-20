@@ -8,6 +8,14 @@ const routes: RouteRecordRaw[] = [
     redirect: '/project'
   },
   {
+    path: '/mcp-guide',
+    name: 'McpGuide',
+    component: () => import('@/views/mcp/McpGuide.vue'),
+    meta: {
+      title: 'MCP 使用指南'
+    }
+  },
+  {
     path: '/log-analysis',
     name: 'LogAnalysis',
     component: () => import('@/views/log-analysis/LogQuery.vue'),
@@ -117,6 +125,11 @@ router.beforeEach(async (to, _from, next) => {
   // Redirect ops to project (ops is permanently disabled)
   if (to.path.startsWith('/ops')) {
     return next('/project')
+  }
+
+  // MCP Guide is always accessible
+  if (to.path === '/mcp-guide') {
+    return next()
   }
 
   next()

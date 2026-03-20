@@ -16,6 +16,7 @@ export const useAppStore = defineStore('app', () => {
   // Menu availability - requires project selection for analysis features
   const availableMenus = computed(() => ({
     'project-management': true, // Always available
+    'mcp-guide': true, // Always available
     'call-chain': projectDirConfigured.value && projectSelected.value,
     'log-analysis': projectDirConfigured.value && projectSelected.value,
     'ops': false // Permanently disabled - no local monitoring capability
