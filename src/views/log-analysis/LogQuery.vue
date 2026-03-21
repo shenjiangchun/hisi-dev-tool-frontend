@@ -280,23 +280,32 @@
     </el-dialog>
 
     <!-- LLM 分析结果弹窗 -->
-    <el-dialog v-model="analysisVisible" title="LLM 智能分析" width="900px" @close="closeAnalysisDialog">
-      <!-- 分析中状态 -->
-      <div v-if="analysisLoading" class="analysis-loading">
-        <div class="loading-content">
-          <el-icon class="loading-icon is-loading"><Loading /></el-icon>
-          <h3>正在分析日志...</h3>
-          <p class="loading-message" v-if="analyzingLog">
-            <el-tag type="danger" size="small" v-if="analyzingLog.errorType">{{ analyzingLog.errorType }}</el-tag>
-            <span class="analyzing-text">{{ shortText(analyzingLog.message, 80) }}</span>
-          </p>
-          <el-progress
-            :percentage="Math.round(analysisProgress)"
-            :stroke-width="10"
-            :show-text="true"
-            class="analysis-progress"
-          />
-          <p class="progress-hint">正在调用 Claude AI 进行智能分析，请稍候...</p>
+    <el-dialog v-model="analysisVisible" title="Claude 智能分析" width="1000px" @close="closeAnalysisDialog">
+      <!-- 分析中状态 - 流式输出 -->
+      <div v-if="analysisLoading" class="analysis-streaming">
+        <div class="stream-header">
+          <el-icon class="streaming-icon is-loading"><Loading /></el-icon>
+          <span>Claude 正在分析...</span>
+          <el-tag v-if="currentSessionId" size="small" type="info">Session: {{ currentSessionId.slice(0, 8) }}</el-tag>
+        </div>
+
+        <!-- 流式输出区域 -->
+        <div class="stream-output" ref="streamOutputRef">
+          <pre>{{ streamOutput }}</pre>
+        </div>
+
+        <!-- 聊天输入框 -->
+        <div class="chat-input" v-if="currentSessionId">
+          <el-input
+            v-model="chatInput"
+            placeholder="继续向 Claude 提问..."
+            @keyup.enter="sendChat"
+            :disabled="chatLoading"
+          >
+            <template #append>
+              <el-button @click="sendChat" :loading="chatLoading" type="primary">发送</el-button>
+            </template>
+          </el-input>
         </div>
       </div>
 
@@ -312,110 +321,43 @@
         </el-result>
       </div>
 
-      <!-- 分析结果展示 -->
-      <div v-else-if="analysisResult" class="analysis-result">
-        <!-- 分析头部信息 -->
-        <div class="result-header-section">
-          <div class="header-row">
-            <div class="header-item">
-              <span class="header-label">错误类型</span>
-              <el-tag type="danger" effect="dark" size="large">
-                <el-icon><Warning /></el-icon>
-                {{ analysisResult.errorType || '未知错误' }}
-              </el-tag>
-            </div>
-            <div class="header-item">
-              <span class="header-label">置信度</span>
-              <div class="confidence-display">
-                <el-progress
-                  type="circle"
-                  :width="60"
-                  :percentage="getConfidencePercent(analysisResult.confidence)"
-                  :color="getConfidenceColor(analysisResult.confidence)"
-                />
-              </div>
-            </div>
-            <div class="header-item">
-              <span class="header-label">分析时间</span>
-              <span class="header-value">{{ analysisResult.timestamp || '-' }}</span>
-            </div>
-          </div>
+      <!-- 分析完成后的交互界面 -->
+      <div v-else class="analysis-complete">
+        <div class="stream-header">
+          <el-icon color="#67c23a"><Check /></el-icon>
+          <span>分析完成</span>
+          <el-tag v-if="currentSessionId" size="small" type="success">Session: {{ currentSessionId.slice(0, 8) }}</el-tag>
         </div>
 
-        <!-- 根本原因 -->
-        <div class="result-section">
-          <div class="section-header">
-            <el-icon><Cpu /></el-icon>
-            <span>根本原因分析</span>
-          </div>
-          <div class="section-content root-cause">
-            <p>{{ analysisResult.rootCause || '无法确定根本原因' }}</p>
-          </div>
+        <!-- 完整输出 -->
+        <div class="stream-output complete">
+          <pre>{{ streamOutput }}</pre>
         </div>
 
-        <!-- 受影响的代码 -->
-        <div class="result-section" v-if="analysisResult.affectedCode && analysisResult.affectedCode.length > 0">
-          <div class="section-header">
-            <el-icon><Document /></el-icon>
-            <span>受影响的代码</span>
-          </div>
-          <div class="section-content">
-            <div class="code-list">
-              <div
-                v-for="(code, index) in analysisResult.affectedCode"
-                :key="index"
-                class="code-item"
-              >
-                <el-tag size="small" type="info">{{ index + 1 }}</el-tag>
-                <code>{{ code }}</code>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- 修复建议 -->
-        <div class="result-section" v-if="analysisResult.fixSuggestions && analysisResult.fixSuggestions.length > 0">
-          <div class="section-header">
-            <el-icon><Check /></el-icon>
-            <span>修复建议</span>
-          </div>
-          <div class="section-content">
-            <el-timeline>
-              <el-timeline-item
-                v-for="(suggestion, index) in analysisResult.fixSuggestions"
-                :key="index"
-                :type="index === 0 ? 'primary' : 'info'"
-                :hollow="index !== 0"
-              >
-                <div class="suggestion-item">
-                  <div class="suggestion-number">建议 {{ index + 1 }}</div>
-                  <p>{{ suggestion }}</p>
-                </div>
-              </el-timeline-item>
-            </el-timeline>
-          </div>
-        </div>
-
-        <!-- 附加信息 -->
-        <div class="result-meta">
-          <el-descriptions :column="2" border size="small">
-            <el-descriptions-item label="分析类型">{{ analysisResult.analysisType || '日志分析' }}</el-descriptions-item>
-            <el-descriptions-item label="请求ID">{{ analysisResult.requestId || '-' }}</el-descriptions-item>
-          </el-descriptions>
+        <!-- 继续对话 -->
+        <div class="chat-input">
+          <el-input
+            v-model="chatInput"
+            placeholder="继续向 Claude 提问..."
+            @keyup.enter="sendChat"
+            :disabled="chatLoading"
+          >
+            <template #append>
+              <el-button @click="sendChat" :loading="chatLoading" type="primary">发送</el-button>
+            </template>
+          </el-input>
         </div>
       </div>
 
-      <!-- 弹窗底部按钮 -->
       <template #footer>
         <div class="dialog-footer">
           <el-button @click="closeAnalysisDialog">关闭</el-button>
           <el-button
-            v-if="analysisResult && analysisResult.requestId"
+            v-if="!analysisLoading && streamOutput"
             type="primary"
-            @click="navigateToReport"
+            @click="copyOutput"
           >
-            查看详细报告
-            <el-icon class="el-icon--right"><Right /></el-icon>
+            复制输出
           </el-button>
         </div>
       </template>
@@ -424,7 +366,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { Search, Loading, Document, Warning, Cpu, Check, Right, Delete, Plus } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
@@ -562,13 +504,17 @@ const addPresetCondition = () => {
   dslConfig.shouldConditions.push({ ...randomPreset })
 }
 
-// Analysis state
+// Analysis state - 流式输出
 const analysisLoading = ref(false)
 const analysisVisible = ref(false)
-const analysisResult = ref<ClaudeAnalysisResult | null>(null)
 const analysisError = ref<string | null>(null)
-const analysisProgress = ref(0)
-const analyzingLog = ref<LogEntry | null>(null)
+const analyzingLog = ref<MockLogEntry | null>(null)
+const streamOutput = ref('')
+const currentSessionId = ref('')
+const chatInput = ref('')
+const chatLoading = ref(false)
+const abortController = ref<(() => void) | null>(null)
+const streamOutputRef = ref<HTMLElement | null>(null)
 
 const queryForm = reactive({
   logLevel: 'ERROR',
@@ -788,63 +734,116 @@ const showDetail = (row: LogEntry) => {
 const handleAnalyze = async (row: MockLogEntry) => {
   // Reset state
   analyzingLog.value = row as any
-  analysisResult.value = null
   analysisError.value = null
-  analysisProgress.value = 0
+  streamOutput.value = ''
+  currentSessionId.value = ''
+  chatInput.value = ''
   analysisVisible.value = true
   analysisLoading.value = true
 
-  // 模拟进度条，最多到 90%，等待真实响应
-  const progressInterval = setInterval(() => {
-    if (analysisProgress.value < 85) {
-      // 逐渐减缓进度增长
-      const increment = Math.random() * 8 * (1 - analysisProgress.value / 100)
-      analysisProgress.value = Math.min(90, analysisProgress.value + increment)
-    }
-  }, 500)
-
   try {
-    const res = await claudeApi.analyzeLog({
-      errorMessage: row.message || '',
-      stackTrace: row.stackTrace || undefined,
-      projectPath: row.serviceName || undefined,
-      additionalContext: row.traceId ? `TraceID: ${row.traceId}` : undefined
-    })
-
-    clearInterval(progressInterval)
-    analysisProgress.value = 100
-    analysisResult.value = res.data
-    ElMessage.success('分析完成')
+    // 使用流式 API
+    abortController.value = claudeApi.streamAnalyze(
+      {
+        errorMessage: row.message || '',
+        stackTrace: row.stackTrace || undefined,
+        projectPath: row.serviceName || undefined
+      },
+      {
+        onSession: (sessionId) => {
+          currentSessionId.value = sessionId
+        },
+        onOutput: (line) => {
+          streamOutput.value += line + '\n'
+          // 自动滚动到底部
+          nextTick(() => {
+            if (streamOutputRef.value) {
+              streamOutputRef.value.scrollTop = streamOutputRef.value.scrollHeight
+            }
+          })
+        },
+        onDone: (status) => {
+          analysisLoading.value = false
+          if (status === 'completed') {
+            ElMessage.success('分析完成')
+          }
+        },
+        onError: (error) => {
+          analysisLoading.value = false
+          analysisError.value = error
+          ElMessage.error(`分析失败: ${error}`)
+        }
+      }
+    )
   } catch (error: any) {
-    clearInterval(progressInterval)
+    analysisLoading.value = false
     analysisError.value = error.message || '分析过程中发生错误'
     ElMessage.error(`分析失败: ${analysisError.value}`)
     console.error('Analysis failed:', error)
-  } finally {
-    clearInterval(progressInterval)
-    analysisLoading.value = false
   }
 }
 
-const getConfidenceColor = (confidence: number) => {
-  if (confidence >= 0.8) return '#67c23a'
-  if (confidence >= 0.6) return '#e6a23c'
-  return '#f56c6c'
-}
+// 发送聊天消息
+const sendChat = async () => {
+  if (!chatInput.value.trim() || !currentSessionId.value || chatLoading.value) return
 
-const getConfidencePercent = (confidence: number) => {
-  return Math.round(confidence * 100)
-}
+  const message = chatInput.value.trim()
+  chatInput.value = ''
+  chatLoading.value = true
 
-const navigateToReport = () => {
-  if (analysisResult.value?.requestId) {
-    router.push(`/log-analysis/report/${analysisResult.value.requestId}`)
+  // 添加用户消息到输出
+  streamOutput.value += `\n\n---\n**You:** ${message}\n\n**Claude:** `
+
+  try {
+    await claudeApi.streamChat(
+      {
+        sessionId: currentSessionId.value,
+        message: message
+      },
+      {
+        onOutput: (line) => {
+          streamOutput.value += line + '\n'
+          nextTick(() => {
+            if (streamOutputRef.value) {
+              streamOutputRef.value.scrollTop = streamOutputRef.value.scrollHeight
+            }
+          })
+        },
+        onDone: () => {
+          chatLoading.value = false
+        },
+        onError: (error) => {
+          chatLoading.value = false
+          ElMessage.error(`发送失败: ${error}`)
+        }
+      }
+    )
+  } catch (error: any) {
+    chatLoading.value = false
+    ElMessage.error(`发送失败: ${error.message}`)
   }
+}
+
+// 复制输出
+const copyOutput = () => {
+  navigator.clipboard.writeText(streamOutput.value)
+  ElMessage.success('已复制到剪贴板')
 }
 
 const closeAnalysisDialog = () => {
+  // 取消正在进行的流式请求
+  if (abortController.value) {
+    abortController.value()
+    abortController.value = null
+  }
+  // 结束会话
+  if (currentSessionId.value) {
+    claudeApi.endSession(currentSessionId.value).catch(() => {})
+  }
   analysisVisible.value = false
   analyzingLog.value = null
+  streamOutput.value = ''
+  currentSessionId.value = ''
 }
 </script>
 
@@ -991,6 +990,57 @@ const closeAnalysisDialog = () => {
 }
 
 /* Analysis Dialog Styles */
+/* 流式分析样式 */
+.analysis-streaming,
+.analysis-complete {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.stream-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #f5f7fa 0%, #e4e7ed 100%);
+  border-radius: 8px;
+}
+
+.streaming-icon {
+  font-size: 20px;
+  color: #409eff;
+}
+
+.stream-output {
+  background: #1e1e1e;
+  color: #d4d4d4;
+  padding: 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-family: 'Consolas', 'Monaco', monospace;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  min-height: 300px;
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.stream-output.complete {
+  background: #282c34;
+}
+
+.stream-output pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.chat-input {
+  margin-top: 8px;
+}
+
 .analysis-loading {
   display: flex;
   justify-content: center;

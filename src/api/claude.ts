@@ -25,7 +25,21 @@ export interface ClaudeAnalysisResult {
   requestId: string
 }
 
+export interface ChatRequest {
+  sessionId: string
+  message: string
+}
+
+// 流式分析回调
+export interface StreamCallbacks {
+  onSession?: (sessionId: string) => void
+  onOutput?: (line: string) => void
+  onDone?: (status: string) => void
+  onError?: (error: string) => void
+}
+
 export const claudeApi = {
+  // 非流式分析（保留兼容）
   analyzeLog(data: AnalyzeLogRequest) {
     return request.post<ClaudeAnalysisResult>('/claude/analyze', data)
   },
@@ -36,5 +50,124 @@ export const claudeApi = {
 
   healthCheck() {
     return request.get<boolean>('/claude/health')
+  },
+
+  /**
+   * 流式分析日志 - 使用 SSE
+   * @param params 分析参数
+   * @param callbacks 回调函数
+   * @returns 返回一个 abort 函数用于取消请求
+   */
+  streamAnalyze(
+    params: {
+      errorMessage: string
+      stackTrace?: string
+      projectPath?: string
+    },
+    callbacks: StreamCallbacks
+  ): () => void {
+    const queryParams = new URLSearchParams()
+    queryParams.append('errorMessage', params.errorMessage)
+    if (params.stackTrace) queryParams.append('stackTrace', params.stackTrace)
+    if (params.projectPath) queryParams.append('projectPath', params.projectPath)
+
+    const url = `/api/claude/stream?${queryParams.toString()}`
+    const eventSource = new EventSource(url)
+
+    eventSource.addEventListener('session', (event) => {
+      callbacks.onSession?.(event.data)
+    })
+
+    eventSource.addEventListener('output', (event) => {
+      callbacks.onOutput?.(event.data)
+    })
+
+    eventSource.addEventListener('done', (event) => {
+      callbacks.onDone?.(event.data)
+      eventSource.close()
+    })
+
+    eventSource.addEventListener('error', (event: any) => {
+      if (event.data) {
+        callbacks.onError?.(event.data)
+      }
+      eventSource.close()
+    })
+
+    eventSource.onerror = () => {
+      callbacks.onError?.('Connection error')
+      eventSource.close()
+    }
+
+    // 返回 abort 函数
+    return () => {
+      eventSource.close()
+    }
+  },
+
+  /**
+   * 流式聊天 - 使用 fetch + POST
+   * @param data 聊天请求
+   * @param callbacks 回调函数
+   */
+  async streamChat(
+    data: ChatRequest,
+    callbacks: StreamCallbacks
+  ): Promise<void> {
+    try {
+      const response = await fetch('/api/claude/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
+      })
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+
+      const reader = response.body?.getReader()
+      if (!reader) {
+        throw new Error('No reader available')
+      }
+
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+
+        // 解析 SSE 格式
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+
+        for (const line of lines) {
+          if (line.startsWith('data:')) {
+            callbacks.onOutput?.(line.slice(5).trim())
+          } else if (line.startsWith('event:session')) {
+            // 下一行是 session 数据
+          } else if (line.startsWith('event:done')) {
+            callbacks.onDone?.('completed')
+          } else if (line.startsWith('event:error')) {
+            callbacks.onError?.(line.slice(5).trim())
+          }
+        }
+      }
+
+      callbacks.onDone?.('completed')
+    } catch (error: any) {
+      callbacks.onError?.(error.message)
+    }
+  },
+
+  /**
+   * 结束会话
+   */
+  endSession(sessionId: string) {
+    return request.delete(`/claude/session/${sessionId}`)
   }
 }
