@@ -19,7 +19,14 @@
               <el-row :gutter="16">
                 <el-col :span="6">
                   <el-form-item label="返回条数" label-width="80px">
-                    <el-input-number v-model="dslConfig.size" :min="1" :max="1000" />
+                    <el-input-number
+                      v-model="dslConfig.size"
+                      :min="1"
+                      :max="1000"
+                      :step="10"
+                      controls-position="right"
+                      style="width: 100%"
+                    />
                   </el-form-item>
                 </el-col>
                 <el-col :span="9">
@@ -611,6 +618,22 @@ const handleQuery = async () => {
     const dslQuery = buildDslQuery()
     const dslJsonString = JSON.stringify(dslQuery)
 
+    // 自动更新预览
+    generatedDsl.value = dslJsonString
+
+    // ========== MOCK 模式：非华为内网环境测试 ==========
+    // TODO: 测试完成后将 mockMode 设为 false，恢复真实 API 调用
+    const mockMode = true
+    if (mockMode) {
+      console.log('【MOCK 模式】返回模拟错误日志数据')
+      const mockLogs = createMockLogs()
+      logs.value = mockLogs
+      pagination.total = mockLogs.length
+      loading.value = false
+      return
+    }
+    // ========== MOCK 模式结束 ==========
+
     const params: any = {
       dslQuery: dslJsonString
     }
@@ -624,8 +647,6 @@ const handleQuery = async () => {
     logs.value = res.data?.logs || []
     pagination.total = res.data?.total || 0
 
-    // 自动更新预览
-    generatedDsl.value = dslJsonString
   } catch (error: any) {
     ElMessage.error(`查询失败: ${error.message || '请稍后重试'}`)
     console.error('Query failed:', error)
@@ -633,6 +654,100 @@ const handleQuery = async () => {
     loading.value = false
   }
 }
+
+// ========== MOCK 数据函数 - 测试完成后删除 ==========
+interface MockLogEntry {
+  id: number
+  timestamp: string
+  level: string
+  serviceName: string
+  traceId: string
+  hostname: string
+  podName: string
+  namespace: string
+  errorType: string
+  message: string
+  stackTrace: string
+  hasStackTrace: boolean
+  lineCount: number
+}
+
+const createMockLogs = (): MockLogEntry[] => {
+  const now = new Date()
+
+  // 模拟 NullPointerException 错误
+  const npeMessage = `2026-03-21 14:30:45.123 [http-nio-8080-exec-15 - MOCK-TRACE-001] ERROR c.h.p.s.i.UserServiceImpl : Failed to get user info
+
+java.lang.NullPointerException: Cannot invoke "com.huawei.project.entity.User.getId()" because "user" is null
+	at com.huawei.project.service.impl.UserServiceImpl.getUserById(UserServiceImpl.java:85)
+	at com.huawei.project.controller.UserController.getUser(UserController.java:45)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
+	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:568)
+	at org.springframework.web.method.support.InvocableHandlerMethod.doInvoke(InvocableHandlerMethod.java:205)
+	at org.springframework.web.method.support.InvocableHandlerMethod.invokeForRequest(InvocableHandlerMethod.java:150)
+	at org.springframework.web.servlet.FrameworkServlet.service(FrameworkServlet.java:883)
+	at javax.servlet.http.HttpServlet.service(HttpServlet.java:623)
+	at org.springframework.web.servlet.FrameworkServlet.service(FrameworkServlet.java:883)
+Caused by: java.util.NoSuchElementException: No value present
+	at java.base/java.util.Optional.orElseThrow(Optional.java:377)
+	at com.huawei.project.repository.UserRepository.findById(UserRepository.java:32)
+	at com.huawei.project.service.impl.UserServiceImpl.getUserById(UserServiceImpl.java:82)
+	... 11 more`
+
+  // 模拟 SQLException 错误
+  const sqlMessage = `2026-03-21 14:25:30.456 [http-nio-8081-exec-8 - MOCK-TRACE-002] ERROR c.h.p.r.OrderRepository : Database connection failed
+
+java.sql.SQLException: Connection refused
+	at com.zaxxer.hikari.pool.HikariPool.createConnection(HikariPool.java:586)
+	at com.zaxxer.hikari.pool.HikariPool$PoolEntryCreator.call(HikariPool.java:742)
+	at com.zaxxer.hikari.pool.HikariPool$PoolEntryCreator.call(HikariPool.java:723)
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:264)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)
+	at java.base/java.lang.Thread.run(Thread.java:833)
+Caused by: java.net.ConnectException: Connection refused
+	at java.base/sun.nio.ch.Net.connect0(Native Method)
+	at java.base/sun.nio.ch.Net.connect(Net.java:579)
+	at java.base/sun.nio.ch.Net.connect(Net.java:568)
+	at java.base/sun.nio.ch.SocketChannelImpl.connect(SocketChannelImpl.java:643)
+	... 7 more`
+
+  return [
+    {
+      id: 1,
+      timestamp: now.toISOString(),
+      level: 'ERROR',
+      serviceName: 'com.huawei.project.service.impl.UserServiceImpl',
+      traceId: `MOCK-TRACE-001-${Date.now()}`,
+      hostname: 'pod-user-service-7f8b9c-x2k4m',
+      podName: 'user-service-deployment-7f8b9c-x2k4m',
+      namespace: 'production',
+      errorType: 'NullPointerException',
+      message: npeMessage,
+      stackTrace: npeMessage,
+      hasStackTrace: true,
+      lineCount: 18
+    },
+    {
+      id: 2,
+      timestamp: new Date(now.getTime() - 5 * 60 * 1000).toISOString(),
+      level: 'ERROR',
+      serviceName: 'com.huawei.project.repository.OrderRepository',
+      traceId: `MOCK-TRACE-002-${Date.now()}`,
+      hostname: 'pod-order-service-3a5b7c-p9q2r',
+      podName: 'order-service-deployment-3a5b7c-p9q2r',
+      namespace: 'production',
+      errorType: 'SQLException',
+      message: sqlMessage,
+      stackTrace: sqlMessage,
+      hasStackTrace: true,
+      lineCount: 16
+    }
+  ]
+}
+// ========== MOCK 数据函数结束 ==========
 
 const handleReset = () => {
   Object.assign(queryForm, {
@@ -670,21 +785,23 @@ const showDetail = (row: LogEntry) => {
   detailVisible.value = true
 }
 
-const handleAnalyze = async (row: LogEntry) => {
+const handleAnalyze = async (row: MockLogEntry) => {
   // Reset state
-  analyzingLog.value = row
+  analyzingLog.value = row as any
   analysisResult.value = null
   analysisError.value = null
   analysisProgress.value = 0
   analysisVisible.value = true
   analysisLoading.value = true
 
-  // Simulate progress during analysis
+  // 模拟进度条，最多到 90%，等待真实响应
   const progressInterval = setInterval(() => {
-    if (analysisProgress.value < 90) {
-      analysisProgress.value += Math.random() * 15
+    if (analysisProgress.value < 85) {
+      // 逐渐减缓进度增长
+      const increment = Math.random() * 8 * (1 - analysisProgress.value / 100)
+      analysisProgress.value = Math.min(90, analysisProgress.value + increment)
     }
-  }, 300)
+  }, 500)
 
   try {
     const res = await claudeApi.analyzeLog({
@@ -694,10 +811,12 @@ const handleAnalyze = async (row: LogEntry) => {
       additionalContext: row.traceId ? `TraceID: ${row.traceId}` : undefined
     })
 
+    clearInterval(progressInterval)
     analysisProgress.value = 100
     analysisResult.value = res.data
     ElMessage.success('分析完成')
   } catch (error: any) {
+    clearInterval(progressInterval)
     analysisError.value = error.message || '分析过程中发生错误'
     ElMessage.error(`分析失败: ${analysisError.value}`)
     console.error('Analysis failed:', error)
