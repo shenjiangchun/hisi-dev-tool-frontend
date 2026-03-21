@@ -3,17 +3,141 @@
     <el-card header="日志查询">
       <el-form :model="queryForm" label-width="100px">
         <el-row :gutter="20">
-          <el-col :span="12">
-            <el-form-item label="DSL查询">
-              <el-input
-                v-model="queryForm.dslQuery"
-                type="textarea"
-                :rows="4"
-                placeholder='输入自定义DSL查询，例如: {"size":10,"query":{"match":{"level":"ERROR"}}}'
-              />
-            </el-form-item>
+          <el-col :span="16">
+            <!-- DSL 配置化构建 -->
+            <el-card shadow="never" class="dsl-builder-card">
+              <template #header>
+                <div class="dsl-builder-header">
+                  <span>DSL 查询配置</span>
+                  <el-button type="primary" size="small" @click="previewDsl">
+                    预览 DSL
+                  </el-button>
+                </div>
+              </template>
+
+              <!-- 基础配置 -->
+              <el-row :gutter="16">
+                <el-col :span="6">
+                  <el-form-item label="返回条数" label-width="80px">
+                    <el-input-number v-model="dslConfig.size" :min="1" :max="1000" />
+                  </el-form-item>
+                </el-col>
+                <el-col :span="9">
+                  <el-form-item label="时间范围" label-width="80px">
+                    <el-select v-model="dslConfig.timeRange" style="width: 100%">
+                      <el-option label="最近 5 分钟" value="now-5m" />
+                      <el-option label="最近 15 分钟" value="now-15m" />
+                      <el-option label="最近 30 分钟" value="now-30m" />
+                      <el-option label="最近 1 小时" value="now-1h" />
+                      <el-option label="最近 3 小时" value="now-3h" />
+                      <el-option label="最近 6 小时" value="now-6h" />
+                      <el-option label="最近 12 小时" value="now-12h" />
+                      <el-option label="最近 24 小时" value="now-24h" />
+                      <el-option label="最近 7 天" value="now-7d" />
+                      <el-option label="自定义时间" value="custom" />
+                    </el-select>
+                  </el-form-item>
+                </el-col>
+                <el-col :span="9" v-if="dslConfig.timeRange === 'custom'">
+                  <el-form-item label="自定义" label-width="60px">
+                    <el-date-picker
+                      v-model="dslConfig.customStartTime"
+                      type="datetime"
+                      placeholder="开始时间"
+                      style="width: 48%"
+                    />
+                    <span style="margin: 0 2px">-</span>
+                    <el-date-picker
+                      v-model="dslConfig.customEndTime"
+                      type="datetime"
+                      placeholder="结束时间"
+                      style="width: 48%"
+                    />
+                  </el-form-item>
+                </el-col>
+              </el-row>
+
+              <!-- Must 条件 -->
+              <el-divider content-position="left">Must 条件 (必须满足)</el-divider>
+              <div class="condition-list">
+                <div v-for="(condition, index) in dslConfig.mustConditions" :key="'must-' + index" class="condition-item">
+                  <el-select v-model="condition.field" placeholder="字段" style="width: 140px">
+                    <el-option label="@timestamp" value="@timestamp" />
+                    <el-option label="level" value="level" />
+                    <el-option label="message" value="message" />
+                    <el-option label="service" value="service" />
+                    <el-option label="traceId" value="traceId" />
+                    <el-option label="hostname" value="hostname" />
+                    <el-option label="自定义字段" value="custom" />
+                  </el-select>
+                  <el-input v-if="condition.field === 'custom'" v-model="condition.customField" placeholder="字段名" style="width: 120px" />
+                  <el-select v-model="condition.operator" placeholder="操作符" style="width: 110px">
+                    <el-option label="range" value="range" />
+                    <el-option label="match" value="match" />
+                    <el-option label="match_phrase" value="match_phrase" />
+                    <el-option label="term" value="term" />
+                    <el-option label="wildcard" value="wildcard" />
+                  </el-select>
+                  <el-input v-model="condition.value" placeholder="值" style="flex: 1; min-width: 150px" />
+                  <el-button type="danger" :icon="Delete" circle size="small" @click="removeCondition('must', index)" />
+                </div>
+                <el-button type="primary" size="small" @click="addCondition('must')">
+                  <el-icon><Plus /></el-icon> 添加 Must 条件
+                </el-button>
+              </div>
+
+              <!-- Should 条件 -->
+              <el-divider content-position="left">Should 条件 (满足任一)</el-divider>
+              <div class="condition-list">
+                <div v-for="(condition, index) in dslConfig.shouldConditions" :key="'should-' + index" class="condition-item">
+                  <el-select v-model="condition.field" placeholder="字段" style="width: 140px">
+                    <el-option label="level" value="level" />
+                    <el-option label="message" value="message" />
+                    <el-option label="service" value="service" />
+                    <el-option label="自定义字段" value="custom" />
+                  </el-select>
+                  <el-input v-if="condition.field === 'custom'" v-model="condition.customField" placeholder="字段名" style="width: 120px" />
+                  <el-select v-model="condition.operator" placeholder="操作符" style="width: 130px">
+                    <el-option label="match" value="match" />
+                    <el-option label="match_phrase" value="match_phrase" />
+                    <el-option label="term" value="term" />
+                    <el-option label="wildcard" value="wildcard" />
+                    <el-option label="regexp" value="regexp" />
+                  </el-select>
+                  <el-input v-model="condition.value" placeholder="值" style="flex: 1; min-width: 150px" />
+                  <el-button type="danger" :icon="Delete" circle size="small" @click="removeCondition('should', index)" />
+                </div>
+                <el-row :gutter="10" style="margin-top: 8px">
+                  <el-col :span="auto">
+                    <el-button type="primary" size="small" @click="addCondition('should')">
+                      <el-icon><Plus /></el-icon> 添加 Should 条件
+                    </el-button>
+                  </el-col>
+                  <el-col :span="auto">
+                    <el-button size="small" @click="addPresetCondition">
+                      <el-icon><Plus /></el-icon> 快速添加错误模式
+                    </el-button>
+                  </el-col>
+                </el-row>
+              </div>
+
+              <!-- minimum_should_match -->
+              <el-form-item label="至少匹配" style="margin-top: 16px">
+                <el-input-number v-model="dslConfig.minimumShouldMatch" :min="0" :max="dslConfig.shouldConditions.length || 10" />
+                <span class="form-hint">个 Should 条件</span>
+              </el-form-item>
+
+              <!-- 生成的 DSL 预览 -->
+              <el-collapse v-if="generatedDsl" style="margin-top: 16px">
+                <el-collapse-item title="生成的 DSL 查询" name="dsl">
+                  <pre class="dsl-preview">{{ generatedDsl }}</pre>
+                  <el-button size="small" @click="copyDsl">复制 DSL</el-button>
+                </el-collapse-item>
+              </el-collapse>
+            </el-card>
           </el-col>
-          <el-col :span="12">
+
+          <el-col :span="8">
             <el-form-item label="快速筛选">
               <div class="quick-filters">
                 <el-select v-model="queryForm.logLevel" clearable placeholder="日志级别" style="width: 120px">
@@ -25,21 +149,6 @@
                 <el-input v-model="queryForm.keyword" placeholder="关键词" style="width: 150px" clearable />
                 <el-input v-model="queryForm.traceId" placeholder="TraceID" style="width: 150px" clearable />
               </div>
-            </el-form-item>
-            <el-form-item label="时间范围">
-              <el-date-picker
-                v-model="queryForm.startTime"
-                type="datetime"
-                placeholder="开始时间"
-                style="width: 180px"
-              />
-              <span style="margin: 0 8px;">至</span>
-              <el-date-picker
-                v-model="queryForm.endTime"
-                type="datetime"
-                placeholder="结束时间"
-                style="width: 180px"
-              />
             </el-form-item>
             <el-form-item>
               <el-button type="primary" @click="handleQuery" :loading="loading">
@@ -308,9 +417,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { Search, Loading, Document, Warning, Cpu, Check, Right } from '@element-plus/icons-vue'
+import { Search, Loading, Document, Warning, Cpu, Check, Right, Delete, Plus } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { logAnalysisApi } from '@/api/logAnalysis'
 import { claudeApi } from '@/api/claude'
@@ -323,6 +432,129 @@ const logs = ref<LogEntry[]>([])
 const detailVisible = ref(false)
 const selectedLog = ref<LogEntry | null>(null)
 
+// DSL 配置化
+interface DslCondition {
+  field: string
+  customField: string
+  operator: string
+  value: string
+}
+
+const dslConfig = reactive({
+  size: 20,
+  timeRange: 'now-15m',
+  customStartTime: null as Date | null,
+  customEndTime: null as Date | null,
+  mustConditions: [] as DslCondition[],
+  shouldConditions: [
+    { field: 'message', customField: '', operator: 'match_phrase', value: 'Caused by:' },
+    { field: 'message', customField: '', operator: 'match_phrase', value: '*ExceptionHandler' },
+    { field: 'level', customField: '', operator: 'match', value: 'ERROR' },
+    { field: 'level', customField: '', operator: 'match', value: 'SEVERE' },
+    { field: 'message', customField: '', operator: 'match_phrase', value: '.*Exception' },
+    { field: 'message', customField: '', operator: 'match_phrase', value: '.*Error' },
+    { field: 'message', customField: '', operator: 'match_phrase', value: 'at org.springframework' }
+  ] as DslCondition[],
+  minimumShouldMatch: 1
+})
+
+const generatedDsl = ref('')
+
+// 生成 DSL JSON
+const buildDslQuery = () => {
+  const query: any = {
+    size: dslConfig.size,
+    query: {
+      bool: {} as any
+    }
+  }
+
+  // Must 条件
+  if (dslConfig.mustConditions.length > 0) {
+    query.query.bool.must = dslConfig.mustConditions.map(cond => {
+      const fieldName = cond.field === 'custom' ? cond.customField : cond.field
+      if (cond.operator === 'range') {
+        return { range: { [fieldName]: { gte: cond.value } } }
+      }
+      return { [cond.operator]: { [fieldName]: cond.value } }
+    })
+  }
+
+  // 时间范围 (添加到 must)
+  if (!query.query.bool.must) {
+    query.query.bool.must = []
+  }
+  if (dslConfig.timeRange === 'custom' && dslConfig.customStartTime) {
+    query.query.bool.must.push({
+      range: {
+        '@timestamp': {
+          gte: dslConfig.customStartTime.toISOString(),
+          lte: (dslConfig.customEndTime || new Date()).toISOString()
+        }
+      }
+    })
+  } else if (dslConfig.timeRange !== 'custom') {
+    query.query.bool.must.push({
+      range: {
+        '@timestamp': { gte: dslConfig.timeRange }
+      }
+    })
+  }
+
+  // Should 条件
+  if (dslConfig.shouldConditions.length > 0) {
+    query.query.bool.should = dslConfig.shouldConditions.map(cond => {
+      const fieldName = cond.field === 'custom' ? cond.customField : cond.field
+      return { [cond.operator]: { [fieldName]: cond.value } }
+    })
+    query.query.bool.minimum_should_match = dslConfig.minimumShouldMatch
+  }
+
+  return query
+}
+
+const previewDsl = () => {
+  const dsl = buildDslQuery()
+  generatedDsl.value = JSON.stringify(dsl, null, 2)
+}
+
+const copyDsl = () => {
+  navigator.clipboard.writeText(generatedDsl.value)
+  ElMessage.success('DSL 已复制到剪贴板')
+}
+
+const addCondition = (type: 'must' | 'should') => {
+  const newCondition: DslCondition = {
+    field: 'message',
+    customField: '',
+    operator: 'match',
+    value: ''
+  }
+  if (type === 'must') {
+    dslConfig.mustConditions.push(newCondition)
+  } else {
+    dslConfig.shouldConditions.push(newCondition)
+  }
+}
+
+const removeCondition = (type: 'must' | 'should', index: number) => {
+  if (type === 'must') {
+    dslConfig.mustConditions.splice(index, 1)
+  } else {
+    dslConfig.shouldConditions.splice(index, 1)
+  }
+}
+
+const addPresetCondition = () => {
+  const presets = [
+    { field: 'message', customField: '', operator: 'match_phrase', value: 'Caused by:' },
+    { field: 'message', customField: '', operator: 'match_phrase', value: 'Exception' },
+    { field: 'level', customField: '', operator: 'match', value: 'ERROR' }
+  ]
+  const randomPreset = presets[Math.floor(Math.random() * presets.length)]
+  dslConfig.shouldConditions.push({ ...randomPreset })
+}
+
 // Analysis state
 const analysisLoading = ref(false)
 const analysisVisible = ref(false)
@@ -332,7 +564,6 @@ const analysisProgress = ref(0)
 const analyzingLog = ref<LogEntry | null>(null)
 
 const queryForm = reactive({
-  dslQuery: '',
   logLevel: 'ERROR',
   keyword: '',
   traceId: '',
@@ -376,25 +607,25 @@ const shortText = (text: string | null, maxLen: number) => {
 const handleQuery = async () => {
   loading.value = true
   try {
+    // 使用配置化的 DSL 查询
+    const dslQuery = buildDslQuery()
+    const dslJsonString = JSON.stringify(dslQuery)
+
     const params: any = {
-      size: pagination.pageSize
+      dslQuery: dslJsonString
     }
 
-    // 如果有自定义 DSL，使用它
-    if (queryForm.dslQuery && queryForm.dslQuery.trim()) {
-      params.dslQuery = queryForm.dslQuery.trim()
-    } else {
-      // 否则使用快速筛选条件
-      if (queryForm.logLevel) params.logLevel = queryForm.logLevel
-      if (queryForm.keyword) params.keyword = queryForm.keyword
-      if (queryForm.traceId) params.traceId = queryForm.traceId
-      if (queryForm.startTime) params.startTime = queryForm.startTime
-      if (queryForm.endTime) params.endTime = queryForm.endTime
-    }
+    // 如果有快速筛选条件，添加到参数中
+    if (queryForm.logLevel) params.logLevel = queryForm.logLevel
+    if (queryForm.keyword) params.keyword = queryForm.keyword
+    if (queryForm.traceId) params.traceId = queryForm.traceId
 
     const res = await logAnalysisApi.queryLogs(params)
     logs.value = res.data?.logs || []
     pagination.total = res.data?.total || 0
+
+    // 自动更新预览
+    generatedDsl.value = dslJsonString
   } catch (error: any) {
     ElMessage.error(`查询失败: ${error.message || '请稍后重试'}`)
     console.error('Query failed:', error)
@@ -405,13 +636,30 @@ const handleQuery = async () => {
 
 const handleReset = () => {
   Object.assign(queryForm, {
-    dslQuery: '',
     logLevel: 'ERROR',
     keyword: '',
     traceId: '',
     startTime: null,
     endTime: null
   })
+  Object.assign(dslConfig, {
+    size: 20,
+    timeRange: 'now-15m',
+    customStartTime: null,
+    customEndTime: null,
+    mustConditions: [],
+    shouldConditions: [
+      { field: 'message', customField: '', operator: 'match_phrase', value: 'Caused by:' },
+      { field: 'message', customField: '', operator: 'match_phrase', value: '*ExceptionHandler' },
+      { field: 'level', customField: '', operator: 'match', value: 'ERROR' },
+      { field: 'level', customField: '', operator: 'match', value: 'SEVERE' },
+      { field: 'message', customField: '', operator: 'match_phrase', value: '.*Exception' },
+      { field: 'message', customField: '', operator: 'match_phrase', value: '.*Error' },
+      { field: 'message', customField: '', operator: 'match_phrase', value: 'at org.springframework' }
+    ],
+    minimumShouldMatch: 1
+  })
+  generatedDsl.value = ''
   pagination.page = 1
   logs.value = []
   pagination.total = 0
@@ -484,6 +732,53 @@ const closeAnalysisDialog = () => {
 <style scoped>
 .mt-4 {
   margin-top: 16px;
+}
+
+.dsl-builder-card {
+  margin-bottom: 16px;
+}
+
+.dsl-builder-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.condition-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.condition-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #f5f7fa;
+  border-radius: 6px;
+  border: 1px solid #ebeef5;
+}
+
+.dsl-preview {
+  background: #1e1e1e;
+  color: #d4d4d4;
+  padding: 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: 'Consolas', 'Monaco', monospace;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 300px;
+  overflow-y: auto;
+  margin-bottom: 12px;
+}
+
+.form-hint {
+  margin-left: 8px;
+  color: #909399;
+  font-size: 12px;
 }
 
 .quick-filters {
