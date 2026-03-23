@@ -23,7 +23,7 @@
   </el-dropdown>
 
   <!-- Status Dialog -->
-  <el-dialog v-model="statusDialogVisible" title="Git 状态" width="500px">
+  <el-dialog v-model="statusDialogVisible" title="Git 状态" width="500px" append-to-body>
     <el-descriptions :column="1" border v-if="status">
       <el-descriptions-item label="当前分支">
         <el-tag>{{ status.branch }}</el-tag>
@@ -43,7 +43,7 @@
   </el-dialog>
 
   <!-- Logs Dialog -->
-  <el-dialog v-model="logsDialogVisible" title="提交记录" width="600px">
+  <el-dialog v-model="logsDialogVisible" title="提交记录" width="600px" append-to-body>
     <el-table :data="logs" v-loading="loading">
       <el-table-column prop="commitId" label="Commit" width="100" />
       <el-table-column prop="message" label="消息" show-overflow-tooltip />
