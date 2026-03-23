@@ -1,4 +1,4 @@
-import axios from 'axios'
+import request from '@/utils/request'
 
 export interface McpInfo {
   version: string
@@ -30,30 +30,28 @@ export const mcpApi = {
    * 获取 MCP 信息
    */
   async getInfo(): Promise<{ data: McpInfo }> {
-    const response = await axios.get('/api/mcp/info')
-    return response
+    return request.get('/mcp/info')
   },
 
   /**
    * 获取下载 URL
    */
   getDownloadUrl(): string {
-    return `${axios.defaults.baseURL}/api/mcp/download`
+    // 使用相对路径，通过 Vite proxy 代理到后端
+    return '/api/mcp/download'
   },
 
   /**
    * 获取配置模板
    */
   async getConfigTemplate(): Promise<{ data: Record<string, unknown> }> {
-    const response = await axios.get('/api/mcp/config-template')
-    return response
+    return request.get('/mcp/config-template')
   },
 
   /**
    * 获取安装脚本
    */
   async getInstallScripts(): Promise<{ data: InstallScripts }> {
-    const response = await axios.get('/api/mcp/install-script')
-    return response
+    return request.get('/mcp/install-script')
   }
 }

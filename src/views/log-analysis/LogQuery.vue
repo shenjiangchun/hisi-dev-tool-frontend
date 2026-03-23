@@ -135,12 +135,38 @@
               </el-form-item>
 
               <!-- 生成的 DSL 预览 -->
-              <el-collapse v-if="generatedDsl" style="margin-top: 16px">
+              <el-collapse v-if="generatedDsl" v-model="dslCollapseActive" style="margin-top: 16px">
                 <el-collapse-item title="生成的 DSL 查询" name="dsl">
                   <pre class="dsl-preview">{{ generatedDsl }}</pre>
                   <el-button size="small" @click="copyDsl">复制 DSL</el-button>
                 </el-collapse-item>
               </el-collapse>
+
+              <!-- 手动输入 DSL -->
+              <el-divider content-position="left">手动输入 DSL</el-divider>
+              <div class="manual-dsl-section">
+                <el-input
+                  v-model="manualDsl"
+                  type="textarea"
+                  :rows="6"
+                  placeholder="在此输入自定义 DSL 查询 JSON，例如：
+{
+  &quot;size&quot;: 20,
+  &quot;query&quot;: {
+    &quot;bool&quot;: {
+      &quot;must&quot;: [{ &quot;match&quot;: { &quot;level&quot;: &quot;ERROR&quot; } }],
+      &quot;should&quot;: [{ &quot;match_phrase&quot;: { &quot;message&quot;: &quot;Exception&quot; } }]
+    }
+  }
+}"
+                  style="font-family: monospace"
+                />
+                <div class="manual-dsl-actions">
+                  <el-button size="small" @click="formatManualDsl">格式化</el-button>
+                  <el-button size="small" @click="loadManualDslToBuilder">加载到配置</el-button>
+                  <el-button size="small" type="warning" @click="clearManualDsl">清空</el-button>
+                </div>
+              </div>
             </el-card>
           </el-col>
 
@@ -408,6 +434,8 @@ const dslConfig = reactive({
 })
 
 const generatedDsl = ref('')
+const dslCollapseActive = ref(['dsl'])
+const manualDsl = ref('')
 
 // 生成 DSL JSON
 const buildDslQuery = () => {
@@ -465,6 +493,7 @@ const buildDslQuery = () => {
 const previewDsl = () => {
   const dsl = buildDslQuery()
   generatedDsl.value = JSON.stringify(dsl, null, 2)
+  dslCollapseActive.value = ['dsl'] // 展开折叠面板
 }
 
 const copyDsl = () => {
@@ -502,6 +531,93 @@ const addPresetCondition = () => {
   ]
   const randomPreset = presets[Math.floor(Math.random() * presets.length)]
   dslConfig.shouldConditions.push({ ...randomPreset })
+}
+
+// 手动 DSL 相关方法
+const formatManualDsl = () => {
+  if (!manualDsl.value.trim()) return
+  try {
+    const parsed = JSON.parse(manualDsl.value)
+    manualDsl.value = JSON.stringify(parsed, null, 2)
+    ElMessage.success('DSL 格式化成功')
+  } catch (e: any) {
+    ElMessage.error(`JSON 格式错误: ${e.message}`)
+  }
+}
+
+const loadManualDslToBuilder = () => {
+  if (!manualDsl.value.trim()) return
+  try {
+    const parsed = JSON.parse(manualDsl.value)
+
+    // 解析 size
+    if (parsed.size) {
+      dslConfig.size = parsed.size
+    }
+
+    // 解析时间范围
+    if (parsed.query?.bool?.must) {
+      const must = parsed.query.bool.must
+      for (const cond of must) {
+        if (cond.range?.['@timestamp']) {
+          const gte = cond.range['@timestamp'].gte
+          if (gte && gte.startsWith('now-')) {
+            dslConfig.timeRange = gte
+          }
+        }
+      }
+    }
+
+    // 解析 must 条件
+    if (parsed.query?.bool?.must) {
+      const must = parsed.query.bool.must
+      dslConfig.mustConditions = []
+      for (const cond of must) {
+        if (!cond.range) {
+          const operator = Object.keys(cond)[0]
+          const field = Object.keys(cond[operator])[0]
+          const value = cond[operator][field]
+          dslConfig.mustConditions.push({
+            field,
+            customField: '',
+            operator,
+            value: typeof value === 'object' ? JSON.stringify(value) : String(value)
+          })
+        }
+      }
+    }
+
+    // 解析 should 条件
+    if (parsed.query?.bool?.should) {
+      const should = parsed.query.bool.should
+      dslConfig.shouldConditions = []
+      for (const cond of should) {
+        const operator = Object.keys(cond)[0]
+        const field = Object.keys(cond[operator])[0]
+        const value = cond[operator][field]
+        dslConfig.shouldConditions.push({
+          field,
+          customField: '',
+          operator,
+          value: typeof value === 'object' ? JSON.stringify(value) : String(value)
+        })
+      }
+    }
+
+    // 解析 minimum_should_match
+    if (parsed.query?.bool?.minimum_should_match !== undefined) {
+      dslConfig.minimumShouldMatch = parsed.query.bool.minimum_should_match
+    }
+
+    ElMessage.success('DSL 已加载到配置')
+    previewDsl()
+  } catch (e: any) {
+    ElMessage.error(`解析失败: ${e.message}`)
+  }
+}
+
+const clearManualDsl = () => {
+  manualDsl.value = ''
 }
 
 // Analysis state - 流式输出
@@ -560,12 +676,29 @@ const shortText = (text: string | null, maxLen: number) => {
 const handleQuery = async () => {
   loading.value = true
   try {
-    // 使用配置化的 DSL 查询
-    const dslQuery = buildDslQuery()
-    const dslJsonString = JSON.stringify(dslQuery)
+    // 判断使用手动 DSL 还是配置化 DSL
+    let dslQuery: any
+    let dslJsonString: string
 
-    // 自动更新预览
-    generatedDsl.value = dslJsonString
+    if (manualDsl.value.trim()) {
+      // 使用手动输入的 DSL
+      try {
+        dslQuery = JSON.parse(manualDsl.value)
+        dslJsonString = manualDsl.value
+        // 更新预览
+        generatedDsl.value = manualDsl.value
+      } catch (e: any) {
+        ElMessage.error(`DSL JSON 格式错误: ${e.message}`)
+        loading.value = false
+        return
+      }
+    } else {
+      // 使用配置化的 DSL 查询
+      dslQuery = buildDslQuery()
+      dslJsonString = JSON.stringify(dslQuery)
+      // 自动更新预览
+      generatedDsl.value = dslJsonString
+    }
 
     // ========== MOCK 模式：非华为内网环境测试 ==========
     // TODO: 测试完成后将 mockMode 设为 false，恢复真实 API 调用
@@ -721,6 +854,7 @@ const handleReset = () => {
     minimumShouldMatch: 1
   })
   generatedDsl.value = ''
+  manualDsl.value = ''
   pagination.page = 1
   logs.value = []
   pagination.total = 0
@@ -897,6 +1031,16 @@ const closeAnalysisDialog = () => {
   margin-left: 8px;
   color: #909399;
   font-size: 12px;
+}
+
+.manual-dsl-section {
+  margin-top: 12px;
+}
+
+.manual-dsl-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
 }
 
 .quick-filters {
