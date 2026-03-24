@@ -34,6 +34,10 @@ export interface McpStatus {
   distExists?: boolean
   claudeConfigPath?: string
   claudeConfigExists?: boolean
+  // Claude Code CLI 相关
+  claudeCodeInstalled?: boolean
+  claudeType?: string
+  mcpConfigured?: boolean
 }
 
 export interface InstallCallbacks {

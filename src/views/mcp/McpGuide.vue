@@ -1,8 +1,15 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { Download, Check, CopyDocument, Loading, Cpu, FolderOpened, SuccessFilled, WarningFilled, CircleCloseFilled } from '@element-plus/icons-vue'
+import { Download, Check, Loading, Cpu, FolderOpened, SuccessFilled, WarningFilled, CircleCloseFilled, Monitor, Cpu as Terminal } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { mcpApi, type McpStatus } from '@/api/mcp'
+
+// 扩展 McpStatus 类型
+interface ExtendedMcpStatus extends McpStatus {
+  claudeCodeInstalled?: boolean
+  claudeType?: string
+  mcpConfigured?: boolean
+}
 
 const mcpInfo = ref<Record<string, unknown> | null>(null)
 const loading = ref(true)
@@ -17,7 +24,7 @@ const backendRunning = ref(false)
 const checkingBackend = ref(false)
 
 // MCP 安装状态
-const mcpStatus = ref<McpStatus | null>(null)
+const mcpStatus = ref<ExtendedMcpStatus | null>(null)
 const checkingStatus = ref(false)
 
 // 安装进度
@@ -34,7 +41,7 @@ const mcpDirInput = ref('')
 onMounted(async () => {
   try {
     const response = await mcpApi.getInfo()
-    mcpInfo.value = response.data as Record<string, unknown>
+    mcpInfo.value = response.data as unknown as Record<string, unknown>
     await checkBackend()
     await checkMcpStatus()
   } catch (error) {
@@ -62,7 +69,7 @@ async function checkMcpStatus() {
   checkingStatus.value = true
   try {
     const response = await mcpApi.checkStatus(mcpDirInput.value || undefined)
-    mcpStatus.value = response.data
+    mcpStatus.value = response.data as ExtendedMcpStatus
     if (response.data.mcpDir && !mcpDirInput.value) {
       mcpDirInput.value = response.data.mcpDir
     }
@@ -121,16 +128,24 @@ async function startInstall() {
   }
 }
 
-// Claude 配置
-const claudeConfig = computed(() => {
-  const mcpPath = isWindows
+// Claude Code CLI 配置命令
+const claudeCodeCliCommand = computed(() => {
+  const mcpPath = mcpDirInput.value || (isWindows
+    ? 'C:/Users/你的用户名/projects/hisi-dev-tool-mcp/dist/index.js'
+    : '/Users/你的用户名/projects/hisi-dev-tool-mcp/dist/index.js')
+  return `claude mcp add hisi-dev-tool -e HISI_API_URL=http://localhost:8080/api/callchain -e HISI_LOG_API_URL=http://localhost:8080/api/log -- node ${mcpPath.replace(/\\/g, '/')}`
+})
+
+// Claude Desktop 配置
+const claudeDesktopConfig = computed(() => {
+  const mcpPath = mcpDirInput.value || (isWindows
     ? 'C:\\\\Users\\\\你的用户名\\\\projects\\\\hisi-dev-tool-mcp\\\\dist\\\\index.js'
-    : '/Users/你的用户名/projects/hisi-dev-tool-mcp/dist/index.js'
+    : '/Users/你的用户名/projects/hisi-dev-tool-mcp/dist/index.js')
   return JSON.stringify({
     mcpServers: {
       "hisi-dev-tool": {
         command: "node",
-        args: [mcpPath],
+        args: [mcpPath.replace(/\\/g, '/')],
         env: {
           HISI_API_URL: "http://localhost:8080/api/callchain",
           HISI_LOG_API_URL: "http://localhost:8080/api/log"
@@ -213,12 +228,33 @@ const tools = [
       <el-card class="status-card">
         <template #header>
           <div class="card-header">
-            <span>MCP 安装状态</span>
+            <div class="header-left">
+              <span>MCP 安装状态</span>
+              <el-tag v-if="mcpStatus?.claudeType" :type="mcpStatus.claudeCodeInstalled ? 'primary' : 'info'" size="small">
+                {{ mcpStatus.claudeType }}
+              </el-tag>
+            </div>
             <el-button size="small" @click="checkMcpStatus" :loading="checkingStatus">
               刷新状态
             </el-button>
           </div>
         </template>
+
+        <!-- Claude 类型检测 -->
+        <div v-if="mcpStatus" class="claude-type-info">
+          <div class="type-badge" :class="{ 'code-cli': mcpStatus.claudeCodeInstalled, 'desktop': !mcpStatus.claudeCodeInstalled }">
+            <el-icon v-if="mcpStatus.claudeCodeInstalled"><Terminal /></el-icon>
+            <el-icon v-else><Monitor /></el-icon>
+            <span>{{ mcpStatus.claudeType }}</span>
+          </div>
+          <p class="type-desc">
+            {{ mcpStatus.claudeCodeInstalled
+              ? '已检测到 Claude Code CLI，将使用 claude mcp add 命令配置'
+              : '未检测到 Claude Code CLI，将使用 Claude Desktop 配置文件' }}
+          </p>
+        </div>
+
+        <el-divider />
 
         <div v-if="mcpStatus" class="status-info">
           <div class="status-item">
@@ -237,16 +273,16 @@ const tools = [
             <span>dist (构建产物)</span>
           </div>
           <div class="status-item">
-            <el-icon v-if="mcpStatus.claudeConfigExists" color="#67C23A"><SuccessFilled /></el-icon>
+            <el-icon v-if="mcpStatus.mcpConfigured" color="#67C23A"><SuccessFilled /></el-icon>
             <el-icon v-else color="#E6A23C"><WarningFilled /></el-icon>
-            <span>Claude 配置</span>
+            <span>MCP 已配置</span>
           </div>
         </div>
 
-        <div v-if="mcpStatus?.installed" class="installed-badge">
+        <div v-if="mcpStatus?.installed && mcpStatus?.mcpConfigured" class="installed-badge">
           <el-tag type="success" size="large">
             <el-icon><SuccessFilled /></el-icon>
-            MCP 已安装
+            MCP 已安装并配置完成
           </el-tag>
         </div>
       </el-card>
@@ -342,25 +378,61 @@ const tools = [
 
         <el-collapse>
           <el-collapse-item title="查看手动配置步骤" name="manual">
-            <el-steps direction="vertical" :active="4">
-              <el-step title="安装依赖并构建">
-                <template #description>
-                  <div class="code-block">
-                    <code>cd hisi-dev-tool-mcp && npm install && npm run build</code>
-                  </div>
-                </template>
-              </el-step>
-              <el-step title="配置 Claude Desktop">
-                <template #description>
-                  <p>编辑配置文件：<code>{{ isWindows ? '%APPDATA%\\Claude\\claude_desktop_config.json' : '~/Library/Application Support/Claude/claude_desktop_config.json' }}</code></p>
-                  <div class="code-block">
-                    <el-button class="copy-btn" size="small" @click="copyText(claudeConfig)">复制</el-button>
-                    <pre><code>{{ claudeConfig }}</code></pre>
-                  </div>
-                </template>
-              </el-step>
-              <el-step title="重启 Claude Desktop" />
-            </el-steps>
+            <!-- Claude Code CLI 配置 -->
+            <div v-if="mcpStatus?.claudeCodeInstalled" class="manual-config">
+              <h4>Claude Code CLI 配置</h4>
+              <el-steps direction="vertical" :active="2">
+                <el-step title="安装依赖并构建">
+                  <template #description>
+                    <div class="code-block">
+                      <code>cd hisi-dev-tool-mcp && npm install && npm run build</code>
+                    </div>
+                  </template>
+                </el-step>
+                <el-step title="添加 MCP 服务器">
+                  <template #description>
+                    <p>执行以下命令：</p>
+                    <div class="code-block">
+                      <el-button class="copy-btn" size="small" @click="copyText(claudeCodeCliCommand)">复制</el-button>
+                      <pre><code>{{ claudeCodeCliCommand }}</code></pre>
+                    </div>
+                    <p class="tip">或使用在线安装按钮自动配置</p>
+                  </template>
+                </el-step>
+                <el-step title="验证配置">
+                  <template #description>
+                    <div class="code-block">
+                      <code>claude mcp list</code>
+                    </div>
+                    <p>应该能看到 hisi-dev-tool 服务</p>
+                  </template>
+                </el-step>
+              </el-steps>
+            </div>
+
+            <!-- Claude Desktop 配置 -->
+            <div v-else class="manual-config">
+              <h4>Claude Desktop 配置</h4>
+              <el-steps direction="vertical" :active="3">
+                <el-step title="安装依赖并构建">
+                  <template #description>
+                    <div class="code-block">
+                      <code>cd hisi-dev-tool-mcp && npm install && npm run build</code>
+                    </div>
+                  </template>
+                </el-step>
+                <el-step title="配置 Claude Desktop">
+                  <template #description>
+                    <p>编辑配置文件：<code>{{ isWindows ? '%APPDATA%\\Claude\\claude_desktop_config.json' : '~/Library/Application Support/Claude/claude_desktop_config.json' }}</code></p>
+                    <div class="code-block">
+                      <el-button class="copy-btn" size="small" @click="copyText(claudeDesktopConfig)">复制</el-button>
+                      <pre><code>{{ claudeDesktopConfig }}</code></pre>
+                    </div>
+                  </template>
+                </el-step>
+                <el-step title="重启 Claude Desktop" />
+              </el-steps>
+            </div>
           </el-collapse-item>
         </el-collapse>
       </el-card>
@@ -385,19 +457,45 @@ const tools = [
         </template>
         <el-collapse>
           <el-collapse-item title="MCP 工具不显示？" name="1">
-            <ol>
-              <li>确认配置文件 JSON 格式正确</li>
-              <li>确认 <code>dist/index.js</code> 文件存在</li>
-              <li>重启 Claude Desktop</li>
-            </ol>
+            <template v-if="mcpStatus?.claudeCodeInstalled">
+              <p><strong>Claude Code CLI 用户：</strong></p>
+              <ol>
+                <li>运行 <code>claude mcp list</code> 确认 hisi-dev-tool 已列出</li>
+                <li>确认 <code>dist/index.js</code> 文件存在</li>
+                <li>确认后端服务运行中</li>
+              </ol>
+            </template>
+            <template v-else>
+              <p><strong>Claude Desktop 用户：</strong></p>
+              <ol>
+                <li>确认配置文件 JSON 格式正确</li>
+                <li>确认 <code>dist/index.js</code> 文件存在</li>
+                <li>重启 Claude Desktop</li>
+              </ol>
+            </template>
           </el-collapse-item>
-          <el-collapse-item title="API 调用失败？" name="2">
+          <el-collapse-item title="如何验证 MCP 配置？" name="2">
+            <template v-if="mcpStatus?.claudeCodeInstalled">
+              <p>Claude Code CLI 用户运行：</p>
+              <div class="code-block">
+                <code>claude mcp list</code>
+              </div>
+              <p>应该看到 hisi-dev-tool 服务</p>
+            </template>
+            <template v-else>
+              <p>检查配置文件是否存在并包含 hisi-dev-tool：</p>
+              <div class="code-block">
+                <code>cat {{ isWindows ? '%APPDATA%\\Claude\\claude_desktop_config.json' : '~/Library/Application Support/Claude/claude_desktop_config.json' }}</code>
+              </div>
+            </template>
+          </el-collapse-item>
+          <el-collapse-item title="API 调用失败？" name="3">
             <p>确保后端服务运行中：</p>
             <div class="code-block">
               <code>curl http://localhost:8080/actuator/health</code>
             </div>
           </el-collapse-item>
-          <el-collapse-item title="调用链数据为空？" name="3">
+          <el-collapse-item title="调用链数据为空？" name="4">
             <p>需要先生成调用链数据：</p>
             <div class="code-block">
               <code>curl -X POST http://localhost:8080/api/method_chain/generate</code>
@@ -480,6 +578,42 @@ const tools = [
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+
+.card-header .header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.claude-type-info {
+  margin-bottom: 16px;
+}
+
+.type-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-weight: 500;
+  margin-bottom: 8px;
+}
+
+.type-badge.code-cli {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.type-badge.desktop {
+  background: #f0f2f5;
+  color: #606266;
+}
+
+.type-desc {
+  font-size: 13px;
+  color: #909399;
+  margin: 0;
 }
 
 .status-info {
@@ -636,6 +770,21 @@ const tools = [
 .tool-item span {
   font-size: 12px;
   color: #909399;
+}
+
+.manual-config {
+  margin-top: 8px;
+}
+
+.manual-config h4 {
+  margin: 0 0 16px 0;
+  color: #303133;
+}
+
+.manual-config .tip {
+  font-size: 12px;
+  color: #909399;
+  font-style: italic;
 }
 
 @media (max-width: 768px) {
