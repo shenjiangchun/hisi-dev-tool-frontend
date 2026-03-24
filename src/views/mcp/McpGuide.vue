@@ -46,105 +46,333 @@ async function checkBackend() {
 const installScript = computed(() => {
   if (isWindows) {
     return `@echo off
-chcp 65001 >nul
+setlocal enabledelayedexpansion
+chcp 65001 >nul 2>&1
+
+REM 设置日志文件
+set "LOG_FILE=%TEMP%\\mcp-install-log.txt"
+echo ========== MCP 安装日志 ========== > "%LOG_FILE%"
+echo 时间: %date% %time% >> "%LOG_FILE%"
+echo ================================= >> "%LOG_FILE%"
+
 echo.
-echo ╔══════════════════════════════════════════════════════════╗
-echo ║       HiSi DevTool MCP 一键安装脚本                      ║
-echo ╚══════════════════════════════════════════════════════════╝
+echo  ========================================================
+echo          HiSi DevTool MCP 一键安装脚本
+echo  ========================================================
 echo.
 
 REM 检查 Node.js
+echo [1/6] 检查 Node.js 环境...
 where node >nul 2>&1
 if %errorlevel% neq 0 (
-    echo [✗] 未找到 Node.js，请先安装 Node.js 18+
-    echo     下载地址: https://nodejs.org/
-    pause
-    exit /b 1
+    echo.
+    echo  [错误] 未找到 Node.js，请先安装 Node.js 18+
+    echo         下载地址: https://nodejs.org/
+    echo.
+    echo [错误] 未找到 Node.js >> "%LOG_FILE%"
+    goto :error_exit
 )
 for /f "tokens=*" %%i in ('node -v') do set NODE_VER=%%i
-echo [✓] Node.js 已安装: %NODE_VER%
+echo        Node.js 版本: %NODE_VER%
 
-REM 设置路径
-set "MCP_DIR=%USERPROFILE%\\projects\\hisi-dev-tool-mcp"
-set "CLAUDE_CONFIG=%APPDATA%\\Claude\\claude_desktop_config.json"
-set "SKILLS_DIR=%USERPROFILE%\\.claude\\skills"
+REM 获取脚本所在目录（MCP 目录）
+echo.
+echo [2/6] 检查安装目录...
+set "MCP_DIR=%~dp0"
+set "MCP_DIR=%MCP_DIR:~0,-1%"
+echo        安装目录: %MCP_DIR%
 
-REM 创建目录
-if not exist "%USERPROFILE%\\projects" mkdir "%USERPROFILE%\\projects"
-if not exist "%SKILLS_DIR%" mkdir "%SKILLS_DIR%"
-
-REM 检查 MCP 目录
-if exist "%MCP_DIR%" (
-    echo [!] MCP 目录已存在: %MCP_DIR%
-    cd /d "%MCP_DIR%"
-) else (
-    echo [i] 请将此脚本放在 hisi-dev-tool-mcp 目录中运行
-    echo     或手动下载 MCP 包后重试
-    pause
-    exit /b 1
+REM 检查 package.json 是否存在
+if not exist "%MCP_DIR%\\package.json" (
+    echo.
+    echo  [错误] 未找到 package.json
+    echo         请确保将此脚本放在解压后的 MCP 目录中运行
+    echo         目录结构应该是:
+    echo           hisi-dev-tool-mcp/
+    echo           ├── package.json
+    echo           ├── src/
+    echo           ├── skills/
+    echo           └── install-mcp.bat
+    echo.
+    echo [错误] 未找到 package.json >> "%LOG_FILE%"
+    goto :error_exit
 )
+echo        找到 package.json
+
+REM 设置其他路径
+set "SKILLS_DIR=%USERPROFILE%\\.claude\\skills"
+set "CLAUDE_CONFIG=%APPDATA%\\Claude\\claude_desktop_config.json"
+
+REM 创建必要目录
+echo.
+echo [3/6] 创建必要目录...
+if not exist "%SKILLS_DIR%" (
+    mkdir "%SKILLS_DIR%"
+    echo        创建 Skills 目录: %SKILLS_DIR%
+) else (
+    echo        Skills 目录已存在
+)
+
+REM 切换到 MCP 目录
+cd /d "%MCP_DIR%"
 
 REM 安装依赖
 echo.
-echo [*] 正在安装依赖...
-call npm install --registry=https://registry.npmmirror.com
+echo [4/6] 安装 npm 依赖...
+echo        这可能需要几分钟，请耐心等待...
+echo.
+call npm install --registry=https://registry.npmmirror.com 2>&1 | tee -a "%LOG_FILE%"
 if %errorlevel% neq 0 (
-    echo [✗] 安装依赖失败
-    pause
-    exit /b 1
+    echo.
+    echo  [错误] npm install 失败
+    echo         请检查网络连接或尝试手动执行: npm install
+    echo.
+    echo [错误] npm install 失败 >> "%LOG_FILE%"
+    goto :error_exit
 )
-echo [✓] 依赖安装完成
+echo.
+echo        依赖安装完成
 
 REM 构建
 echo.
-echo [*] 正在构建 MCP Server...
-call npm run build
+echo [5/6] 构建 MCP Server...
+call npm run build 2>&1 | tee -a "%LOG_FILE%"
 if %errorlevel% neq 0 (
-    echo [✗] 构建失败
-    pause
-    exit /b 1
+    echo.
+    echo  [错误] npm run build 失败
+    echo         请检查是否有 TypeScript 编译错误
+    echo.
+    echo [错误] npm run build 失败 >> "%LOG_FILE%"
+    goto :error_exit
 )
-echo [✓] 构建完成
+echo        构建完成
 
 REM 安装 Skills
 echo.
-echo [*] 正在安装 Skills...
-if exist "skills" (
-    xcopy /E /Y "skills\\*" "%SKILLS_DIR%\\"
-    echo [✓] Skills 已安装到: %SKILLS_DIR%
+echo [6/6] 安装 Skills...
+if exist "%MCP_DIR%\\skills" (
+    xcopy /E /Y /Q "%MCP_DIR%\\skills\\*" "%SKILLS_DIR%\\" >nul
+    echo        Skills 已复制到: %SKILLS_DIR%
 ) else (
-    echo [!] 未找到 skills 目录，跳过
+    echo        [警告] 未找到 skills 目录，跳过
 )
 
 REM 配置 Claude Desktop
 echo.
-echo [*] 正在配置 Claude Desktop...
+echo  ========================================================
+echo                    配置 Claude Desktop
+echo  ========================================================
+echo.
+
 if not exist "%APPDATA%\\Claude" mkdir "%APPDATA%\\Claude"
 
-REM 生成配置
+REM 生成配置文件路径（使用正斜杠）
 set "MCP_PATH=%MCP_DIR%\\dist\\index.js"
-set "CONFIG_CONTENT={\n  "mcpServers": {\n    "hisi-dev-tool": {\n      "command": "node",\n      "args": ["%MCP_PATH:\=\\\\%"],\n      "env": {\n        "HISI_API_URL": "http://localhost:8080/api/callchain",\n        "HISI_LOG_API_URL": "http://localhost:8080/api/log"\n      }\n    }\n  }\n}"
+set "MCP_PATH=%MCP_PATH:\\=/%"
 
-if exist "%CLAUDE_CONFIG%" (
-    echo [!] 配置文件已存在，请手动添加以下配置:
-    echo.
-    echo %CONFIG_CONTENT%
-    echo.
-) else (
-    echo %CONFIG_CONTENT% > "%CLAUDE_CONFIG%"
-    echo [✓] 配置文件已创建: %CLAUDE_CONFIG%
-)
+REM 写入配置文件
+echo 正在生成配置文件...
+(
+echo {
+echo   "mcpServers": {
+echo     "hisi-dev-tool": {
+echo       "command": "node",
+echo       "args": ["%MCP_PATH%"],
+echo       "env": {
+echo         "HISI_API_URL": "http://localhost:8080/api/callchain",
+echo         "HISI_LOG_API_URL": "http://localhost:8080/api/log"
+echo       }
+echo     }
+echo   }
+echo }
+) > "%CLAUDE_CONFIG%"
 
+echo        配置文件已创建: %CLAUDE_CONFIG%
 echo.
-echo ╔══════════════════════════════════════════════════════════╗
-echo ║                    安装完成!                             ║
-echo ╠══════════════════════════════════════════════════════════╣
-echo ║  1. 重启 Claude Desktop                                  ║
-echo ║  2. 确保 hisi-dev-tool 后端服务正在运行                  ║
-echo ║  3. 在 Claude 中测试: "帮我分析调用链"                   ║
-echo ╚══════════════════════════════════════════════════════════╝
+
+REM 显示完成信息
+echo  ========================================================
+echo                     安装成功!
+echo  ========================================================
 echo.
-pause`
+echo  接下来的步骤:
+echo.
+echo  1. 重启 Claude Desktop（如果正在运行）
+echo  2. 确保 hisi-dev-tool 后端服务正在运行
+echo     (访问 http://localhost:8080/api/claude/health 检查)
+echo  3. 在 Claude Desktop 中测试:
+echo     输入 "帮我分析调用链" 或 "查询错误日志"
+echo.
+echo  安装日志已保存到: %LOG_FILE%
+echo.
+echo  ========================================================
+echo.
+goto :end
+
+:error_exit
+echo.
+echo  ========================================================
+echo                     安装失败!
+echo  ========================================================
+echo.
+echo  请查看上方错误信息，或查看日志文件:
+echo  %LOG_FILE%
+echo.
+echo  常见问题:
+echo  1. Node.js 未安装 - 从 https://nodejs.org/ 下载安装
+echo  2. 网络问题 - 检查网络连接，或配置 npm 代理
+echo  3. 权限问题 - 右键以管理员身份运行此脚本
+echo.
+
+:end
+echo 按任意键关闭此窗口...
+pause >nul`
+  } else {
+    return `#!/bin/bash
+
+# 设置日志文件
+LOG_FILE="/tmp/mcp-install-log.txt"
+echo "========== MCP 安装日志 ==========" > "$LOG_FILE"
+echo "时间: $(date)" >> "$LOG_FILE"
+echo "==================================" >> "$LOG_FILE"
+
+echo ""
+echo "========================================================"
+echo "        HiSi DevTool MCP 一键安装脚本"
+echo "========================================================"
+echo ""
+
+# 检查 Node.js
+echo "[1/6] 检查 Node.js 环境..."
+if ! command -v node &> /dev/null; then
+    echo ""
+    echo " [错误] 未找到 Node.js，请先安装 Node.js 18+"
+    echo "        下载地址: https://nodejs.org/"
+    echo ""
+    echo "[错误] 未找到 Node.js" >> "$LOG_FILE"
+    exit 1
+fi
+echo "       Node.js 版本: $(node -v)"
+
+# 获取脚本所在目录
+echo ""
+echo "[2/6] 检查安装目录..."
+MCP_DIR="$(cd "$(dirname "$0")" && pwd)"
+echo "       安装目录: $MCP_DIR"
+
+# 检查 package.json
+if [ ! -f "$MCP_DIR/package.json" ]; then
+    echo ""
+    echo " [错误] 未找到 package.json"
+    echo "        请确保将此脚本放在解压后的 MCP 目录中运行"
+    echo ""
+    echo "[错误] 未找到 package.json" >> "$LOG_FILE"
+    exit 1
+fi
+echo "       找到 package.json"
+
+# 设置路径
+SKILLS_DIR="$HOME/.claude/skills"
+CLAUDE_CONFIG="$HOME/Library/Application Support/Claude/claude_desktop_config.json"
+
+# 创建目录
+echo ""
+echo "[3/6] 创建必要目录..."
+mkdir -p "$SKILLS_DIR"
+echo "       Skills 目录: $SKILLS_DIR"
+
+# 切换目录
+cd "$MCP_DIR"
+
+# 安装依赖
+echo ""
+echo "[4/6] 安装 npm 依赖..."
+echo "       这可能需要几分钟，请耐心等待..."
+echo ""
+npm install --registry=https://registry.npmmirror.com 2>&1 | tee -a "$LOG_FILE"
+if [ ${PIPESTATUS[0]} -ne 0 ]; then
+    echo ""
+    echo " [错误] npm install 失败"
+    echo "        请检查网络连接或尝试手动执行: npm install"
+    echo ""
+    echo "[错误] npm install 失败" >> "$LOG_FILE"
+    exit 1
+fi
+echo ""
+echo "       依赖安装完成"
+
+# 构建
+echo ""
+echo "[5/6] 构建 MCP Server..."
+npm run build 2>&1 | tee -a "$LOG_FILE"
+if [ ${PIPESTATUS[0]} -ne 0 ]; then
+    echo ""
+    echo " [错误] npm run build 失败"
+    echo "        请检查是否有 TypeScript 编译错误"
+    echo ""
+    echo "[错误] npm run build 失败" >> "$LOG_FILE"
+    exit 1
+fi
+echo "       构建完成"
+
+# 安装 Skills
+echo ""
+echo "[6/6] 安装 Skills..."
+if [ -d "$MCP_DIR/skills" ]; then
+    cp -r "$MCP_DIR/skills/"* "$SKILLS_DIR/"
+    echo "       Skills 已复制到: $SKILLS_DIR"
+else
+    echo "       [警告] 未找到 skills 目录，跳过"
+fi
+
+# 配置 Claude Desktop
+echo ""
+echo "========================================================"
+echo "                 配置 Claude Desktop"
+echo "========================================================"
+echo ""
+
+mkdir -p "$(dirname "$CLAUDE_CONFIG")"
+
+# 写入配置
+MCP_PATH="$MCP_DIR/dist/index.js"
+cat > "$CLAUDE_CONFIG" << EOF
+{
+  "mcpServers": {
+    "hisi-dev-tool": {
+      "command": "node",
+      "args": ["$MCP_PATH"],
+      "env": {
+        "HISI_API_URL": "http://localhost:8080/api/callchain",
+        "HISI_LOG_API_URL": "http://localhost:8080/api/log"
+      }
+    }
+  }
+}
+EOF
+
+echo "       配置文件已创建: $CLAUDE_CONFIG"
+echo ""
+
+# 完成
+echo "========================================================"
+echo "                    安装成功!"
+echo "========================================================"
+echo ""
+echo "接下来的步骤:"
+echo ""
+echo "1. 重启 Claude Desktop（如果正在运行）"
+echo "2. 确保 hisi-dev-tool 后端服务正在运行"
+echo "   (访问 http://localhost:8080/api/claude/health 检查)"
+echo "3. 在 Claude Desktop 中测试:"
+echo "   输入 \"帮我分析调用链\" 或 \"查询错误日志\""
+echo ""
+echo "安装日志已保存到: $LOG_FILE"
+echo ""
+echo "========================================================"
+`
+  }
+})
   } else {
     return `#!/bin/bash
 
