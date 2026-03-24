@@ -233,34 +233,45 @@ async function sendMessage() {
   if (!inputMessage.value.trim() || !sessionStore.currentSessionId) return
 
   const message = inputMessage.value.trim()
+  const currentSessionId = sessionStore.currentSessionId // 保存当前会话 ID
+
   inputMessage.value = ''
   streaming.value = true
   streamingContent.value = ''
 
+  // 先添加用户消息
+  sessionStore.addMessageToSession(currentSessionId, {
+    id: Date.now(),
+    sessionId: currentSessionId,
+    role: 'user',
+    content: message,
+    createdAt: new Date().toISOString()
+  })
+
+  // 设置正在流式传输的会话
+  sessionStore.setStreamingSession(currentSessionId)
+
   try {
     await claudeApi.universalChat(
       {
-        sessionId: sessionStore.currentSessionId,
+        sessionId: currentSessionId,
         prompt: message
       },
       {
         onOutput: (content) => {
-          streamingContent.value += content
-          scrollToBottom()
+          // 只有当前会话才更新 UI
+          if (sessionStore.currentSessionId === currentSessionId) {
+            streamingContent.value += content
+            scrollToBottom()
+          }
         },
         onDone: () => {
           streaming.value = false
-          // 添加消息到 store
-          sessionStore.addMessage({
-            id: Date.now(),
-            sessionId: sessionStore.currentSessionId!,
-            role: 'user',
-            content: message,
-            createdAt: new Date().toISOString()
-          })
-          sessionStore.addMessage({
+          sessionStore.setStreamingSession(null)
+          // 添加助手消息到正确的会话
+          sessionStore.addMessageToSession(currentSessionId, {
             id: Date.now() + 1,
-            sessionId: sessionStore.currentSessionId!,
+            sessionId: currentSessionId,
             role: 'assistant',
             content: streamingContent.value,
             createdAt: new Date().toISOString()
@@ -269,12 +280,14 @@ async function sendMessage() {
         },
         onError: (error) => {
           streaming.value = false
+          sessionStore.setStreamingSession(null)
           ElMessage.error(`发送失败: ${error}`)
         }
       }
     )
   } catch (error) {
     streaming.value = false
+    sessionStore.setStreamingSession(null)
     ElMessage.error('发送失败')
   }
 }

@@ -11,6 +11,12 @@ export const useSessionStore = defineStore('session', () => {
   const loading = ref(false)
   const total = ref(0)
 
+  // 每个会话的消息缓存（按 sessionId 存储）
+  const messagesCache = ref<Record<string, Message[]>>({})
+
+  // 当前正在流式传输的会话 ID
+  const streamingSessionId = ref<string | null>(null)
+
   // 计算属性
   const currentSession = computed(() =>
     sessions.value.find(s => s.id === currentSessionId.value) || null
@@ -58,6 +64,8 @@ export const useSessionStore = defineStore('session', () => {
       }
       currentSessionId.value = sessionId
       messages.value = response.data.messages
+      // 缓存消息
+      messagesCache.value[sessionId] = response.data.messages
     } catch (error) {
       console.error('Failed to load session detail:', error)
     } finally {
@@ -71,17 +79,47 @@ export const useSessionStore = defineStore('session', () => {
   function setCurrentSession(sessionId: string | null) {
     currentSessionId.value = sessionId
     if (sessionId) {
-      loadSessionDetail(sessionId)
+      // 优先使用缓存的消息，避免重复加载
+      if (messagesCache.value[sessionId]) {
+        messages.value = messagesCache.value[sessionId]
+      } else {
+        loadSessionDetail(sessionId)
+      }
     } else {
       messages.value = []
     }
   }
 
   /**
-   * 添加消息
+   * 设置正在流式传输的会话
+   */
+  function setStreamingSession(sessionId: string | null) {
+    streamingSessionId.value = sessionId
+  }
+
+  /**
+   * 添加消息到指定会话
+   */
+  function addMessageToSession(sessionId: string, message: Message) {
+    // 更新缓存
+    if (!messagesCache.value[sessionId]) {
+      messagesCache.value[sessionId] = []
+    }
+    messagesCache.value[sessionId].push(message)
+
+    // 如果是当前会话，也更新当前消息列表
+    if (sessionId === currentSessionId.value) {
+      messages.value = [...messagesCache.value[sessionId]]
+    }
+  }
+
+  /**
+   * 添加消息（兼容旧接口，添加到当前会话）
    */
   function addMessage(message: Message) {
-    messages.value.push(message)
+    if (currentSessionId.value) {
+      addMessageToSession(currentSessionId.value, message)
+    }
   }
 
   /**
@@ -89,6 +127,9 @@ export const useSessionStore = defineStore('session', () => {
    */
   function clearCurrentMessages() {
     messages.value = []
+    if (currentSessionId.value) {
+      messagesCache.value[currentSessionId.value] = []
+    }
   }
 
   /**
@@ -128,6 +169,8 @@ export const useSessionStore = defineStore('session', () => {
     try {
       await sessionApi.delete(sessionId)
       sessions.value = sessions.value.filter(s => s.id !== sessionId)
+      // 清除消息缓存
+      delete messagesCache.value[sessionId]
       if (currentSessionId.value === sessionId) {
         currentSessionId.value = null
         messages.value = []
@@ -143,6 +186,7 @@ export const useSessionStore = defineStore('session', () => {
   async function clearSessionMessages(sessionId: string) {
     try {
       await sessionApi.clearMessages(sessionId)
+      messagesCache.value[sessionId] = []
       if (currentSessionId.value === sessionId) {
         messages.value = []
       }
@@ -178,6 +222,7 @@ export const useSessionStore = defineStore('session', () => {
     messages,
     loading,
     total,
+    streamingSessionId,
     // 计算属性
     currentSession,
     activeSessions,
@@ -186,6 +231,8 @@ export const useSessionStore = defineStore('session', () => {
     loadSessions,
     loadSessionDetail,
     setCurrentSession,
+    setStreamingSession,
+    addMessageToSession,
     addMessage,
     clearCurrentMessages,
     updateSessionTitle,

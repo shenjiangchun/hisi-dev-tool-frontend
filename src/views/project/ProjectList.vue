@@ -641,6 +641,8 @@ const handleCodeAnalysis = async () => {
   if (selectedCommits.value.length === 0) return
 
   analysisLoading.value = true
+  let newSessionId = ''
+
   try {
     // Build prompt with commit info
     const commitInfos = selectedCommits.value.map(c =>
@@ -654,7 +656,7 @@ const handleCodeAnalysis = async () => {
       projectContext: `项目: ${selectedProjectForCommit.value}`
     })
 
-    const sessionId = await claudeApi.universalChat(
+    newSessionId = await claudeApi.universalChat(
       {
         prompt,
         scene: 'code-analysis',
@@ -664,17 +666,27 @@ const handleCodeAnalysis = async () => {
         }
       },
       {
+        onSession: (sessionId) => {
+          // 收到 sessionId 后立即跳转
+          newSessionId = sessionId
+          commitDialogVisible.value = false
+          router.push({ name: 'ClaudeSession', query: { sessionId } })
+        },
         onOutput: () => {},
-        onDone: () => {},
+        onDone: () => {
+          ElMessage.success('分析完成')
+        },
         onError: (error) => {
           ElMessage.error(`分析失败: ${error}`)
         }
       }
     )
 
-    commitDialogVisible.value = false
-    router.push({ name: 'ClaudeSession', query: { sessionId } })
-    ElMessage.success('已创建代码分析会话')
+    // 如果 onSession 没被调用，使用返回的 sessionId 跳转
+    if (newSessionId && !router.currentRoute.value.query.sessionId) {
+      commitDialogVisible.value = false
+      router.push({ name: 'ClaudeSession', query: { sessionId: newSessionId } })
+    }
   } catch (error) {
     ElMessage.error('创建分析会话失败')
   } finally {
@@ -687,6 +699,8 @@ const handleImpactAnalysis = async () => {
   if (selectedCommits.value.length === 0) return
 
   analysisLoading.value = true
+  let newSessionId = ''
+
   try {
     const commitInfos = selectedCommits.value.map(c =>
       `${c.commitId}: ${c.shortMessage}`
@@ -700,7 +714,7 @@ const handleImpactAnalysis = async () => {
       projectName: selectedProjectForCommit.value
     }) + `\n\n提交信息:\n${commitInfos}`
 
-    const sessionId = await claudeApi.universalChat(
+    newSessionId = await claudeApi.universalChat(
       {
         prompt,
         scene: 'impact-analysis',
@@ -710,17 +724,27 @@ const handleImpactAnalysis = async () => {
         }
       },
       {
+        onSession: (sessionId) => {
+          // 收到 sessionId 后立即跳转
+          newSessionId = sessionId
+          commitDialogVisible.value = false
+          router.push({ name: 'ClaudeSession', query: { sessionId } })
+        },
         onOutput: () => {},
-        onDone: () => {},
+        onDone: () => {
+          ElMessage.success('分析完成')
+        },
         onError: (error) => {
           ElMessage.error(`分析失败: ${error}`)
         }
       }
     )
 
-    commitDialogVisible.value = false
-    router.push({ name: 'ClaudeSession', query: { sessionId } })
-    ElMessage.success('已创建影响分析会话')
+    // 如果 onSession 没被调用，使用返回的 sessionId 跳转
+    if (newSessionId && !router.currentRoute.value.query.sessionId) {
+      commitDialogVisible.value = false
+      router.push({ name: 'ClaudeSession', query: { sessionId: newSessionId } })
+    }
   } catch (error) {
     ElMessage.error('创建分析会话失败')
   } finally {
@@ -738,13 +762,14 @@ const handleUpdateAll = async () => {
   updatingAll.value = true
   try {
     const res = await gitApi.updateAll(appStore.projectDir)
-    updateResult.value = res.data
+    // axios 拦截器已返回 response.data
+    updateResult.value = res as unknown as UpdateAllResponse
     updateResultVisible.value = true
 
     // Refresh project list
     await handleScan()
-  } catch (error) {
-    ElMessage.error('一键更新失败')
+  } catch (error: any) {
+    ElMessage.error(`一键更新失败: ${error.message || error}`)
   } finally {
     updatingAll.value = false
   }
