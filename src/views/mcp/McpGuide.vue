@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { Download, Check, CopyDocument, Loading, Cpu } from '@element-plus/icons-vue'
+import { Download, Check, CopyDocument, Loading, Cpu, FolderOpened, SuccessFilled, WarningFilled, CircleCloseFilled } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import { mcpApi, type McpInfo } from '@/api/mcp'
+import { mcpApi, type McpStatus } from '@/api/mcp'
 
-const mcpInfo = ref<McpInfo | null>(null)
+const mcpInfo = ref<Record<string, unknown> | null>(null)
 const loading = ref(true)
 const downloading = ref(false)
 const copySuccess = ref(false)
@@ -16,12 +16,27 @@ const isWindows = navigator.platform.toLowerCase().includes('win')
 const backendRunning = ref(false)
 const checkingBackend = ref(false)
 
+// MCP 安装状态
+const mcpStatus = ref<McpStatus | null>(null)
+const checkingStatus = ref(false)
+
+// 安装进度
+const installing = ref(false)
+const installStep = ref('')
+const installLogs = ref<string[]>([])
+const installSuccess = ref(false)
+const installError = ref('')
+
+// MCP 目录输入
+const mcpDirInput = ref('')
+
 // 加载 MCP 信息
 onMounted(async () => {
   try {
     const response = await mcpApi.getInfo()
-    mcpInfo.value = response.data
+    mcpInfo.value = response.data as Record<string, unknown>
     await checkBackend()
+    await checkMcpStatus()
   } catch (error) {
     console.error('Failed to load MCP info:', error)
   } finally {
@@ -42,337 +57,69 @@ async function checkBackend() {
   }
 }
 
-// 一键安装脚本
-const installScript = computed(() => {
-  if (isWindows) {
-    return `@echo off
-setlocal enabledelayedexpansion
-chcp 65001 >nul 2>&1
-
-REM 设置日志文件
-set "LOG_FILE=%TEMP%\\mcp-install-log.txt"
-echo ========== MCP 安装日志 ========== > "%LOG_FILE%"
-echo 时间: %date% %time% >> "%LOG_FILE%"
-echo ================================= >> "%LOG_FILE%"
-
-echo.
-echo  ========================================================
-echo          HiSi DevTool MCP 一键安装脚本
-echo  ========================================================
-echo.
-
-REM 检查 Node.js
-echo [1/6] 检查 Node.js 环境...
-where node >nul 2>&1
-if %errorlevel% neq 0 (
-    echo.
-    echo  [错误] 未找到 Node.js，请先安装 Node.js 18+
-    echo         下载地址: https://nodejs.org/
-    echo.
-    echo [错误] 未找到 Node.js >> "%LOG_FILE%"
-    goto :error_exit
-)
-for /f "tokens=*" %%i in ('node -v') do set NODE_VER=%%i
-echo        Node.js 版本: %NODE_VER%
-
-REM 获取脚本所在目录（MCP 目录）
-echo.
-echo [2/6] 检查安装目录...
-set "MCP_DIR=%~dp0"
-set "MCP_DIR=%MCP_DIR:~0,-1%"
-echo        安装目录: %MCP_DIR%
-
-REM 检查 package.json 是否存在
-if not exist "%MCP_DIR%\\package.json" (
-    echo.
-    echo  [错误] 未找到 package.json
-    echo         请确保将此脚本放在解压后的 MCP 目录中运行
-    echo         目录结构应该是:
-    echo           hisi-dev-tool-mcp/
-    echo           ├── package.json
-    echo           ├── src/
-    echo           ├── skills/
-    echo           └── install-mcp.bat
-    echo.
-    echo [错误] 未找到 package.json >> "%LOG_FILE%"
-    goto :error_exit
-)
-echo        找到 package.json
-
-REM 设置其他路径
-set "SKILLS_DIR=%USERPROFILE%\\.claude\\skills"
-set "CLAUDE_CONFIG=%APPDATA%\\Claude\\claude_desktop_config.json"
-
-REM 创建必要目录
-echo.
-echo [3/6] 创建必要目录...
-if not exist "%SKILLS_DIR%" (
-    mkdir "%SKILLS_DIR%"
-    echo        创建 Skills 目录: %SKILLS_DIR%
-) else (
-    echo        Skills 目录已存在
-)
-
-REM 切换到 MCP 目录
-cd /d "%MCP_DIR%"
-
-REM 安装依赖
-echo.
-echo [4/6] 安装 npm 依赖...
-echo        这可能需要几分钟，请耐心等待...
-echo.
-call npm install --registry=https://registry.npmmirror.com 2>&1 | tee -a "%LOG_FILE%"
-if %errorlevel% neq 0 (
-    echo.
-    echo  [错误] npm install 失败
-    echo         请检查网络连接或尝试手动执行: npm install
-    echo.
-    echo [错误] npm install 失败 >> "%LOG_FILE%"
-    goto :error_exit
-)
-echo.
-echo        依赖安装完成
-
-REM 构建
-echo.
-echo [5/6] 构建 MCP Server...
-call npm run build 2>&1 | tee -a "%LOG_FILE%"
-if %errorlevel% neq 0 (
-    echo.
-    echo  [错误] npm run build 失败
-    echo         请检查是否有 TypeScript 编译错误
-    echo.
-    echo [错误] npm run build 失败 >> "%LOG_FILE%"
-    goto :error_exit
-)
-echo        构建完成
-
-REM 安装 Skills
-echo.
-echo [6/6] 安装 Skills...
-if exist "%MCP_DIR%\\skills" (
-    xcopy /E /Y /Q "%MCP_DIR%\\skills\\*" "%SKILLS_DIR%\\" >nul
-    echo        Skills 已复制到: %SKILLS_DIR%
-) else (
-    echo        [警告] 未找到 skills 目录，跳过
-)
-
-REM 配置 Claude Desktop
-echo.
-echo  ========================================================
-echo                    配置 Claude Desktop
-echo  ========================================================
-echo.
-
-if not exist "%APPDATA%\\Claude" mkdir "%APPDATA%\\Claude"
-
-REM 生成配置文件路径（使用正斜杠）
-set "MCP_PATH=%MCP_DIR%\\dist\\index.js"
-set "MCP_PATH=%MCP_PATH:\\=/%"
-
-REM 写入配置文件
-echo 正在生成配置文件...
-(
-echo {
-echo   "mcpServers": {
-echo     "hisi-dev-tool": {
-echo       "command": "node",
-echo       "args": ["%MCP_PATH%"],
-echo       "env": {
-echo         "HISI_API_URL": "http://localhost:8080/api/callchain",
-echo         "HISI_LOG_API_URL": "http://localhost:8080/api/log"
-echo       }
-echo     }
-echo   }
-echo }
-) > "%CLAUDE_CONFIG%"
-
-echo        配置文件已创建: %CLAUDE_CONFIG%
-echo.
-
-REM 显示完成信息
-echo  ========================================================
-echo                     安装成功!
-echo  ========================================================
-echo.
-echo  接下来的步骤:
-echo.
-echo  1. 重启 Claude Desktop（如果正在运行）
-echo  2. 确保 hisi-dev-tool 后端服务正在运行
-echo     (访问 http://localhost:8080/api/claude/health 检查)
-echo  3. 在 Claude Desktop 中测试:
-echo     输入 "帮我分析调用链" 或 "查询错误日志"
-echo.
-echo  安装日志已保存到: %LOG_FILE%
-echo.
-echo  ========================================================
-echo.
-goto :end
-
-:error_exit
-echo.
-echo  ========================================================
-echo                     安装失败!
-echo  ========================================================
-echo.
-echo  请查看上方错误信息，或查看日志文件:
-echo  %LOG_FILE%
-echo.
-echo  常见问题:
-echo  1. Node.js 未安装 - 从 https://nodejs.org/ 下载安装
-echo  2. 网络问题 - 检查网络连接，或配置 npm 代理
-echo  3. 权限问题 - 右键以管理员身份运行此脚本
-echo.
-
-:end
-echo 按任意键关闭此窗口...
-pause >nul`
-  } else {
-    return `#!/bin/bash
-
-# 设置日志文件
-LOG_FILE="/tmp/mcp-install-log.txt"
-echo "========== MCP 安装日志 ==========" > "$LOG_FILE"
-echo "时间: $(date)" >> "$LOG_FILE"
-echo "==================================" >> "$LOG_FILE"
-
-echo ""
-echo "========================================================"
-echo "        HiSi DevTool MCP 一键安装脚本"
-echo "========================================================"
-echo ""
-
-# 检查 Node.js
-echo "[1/6] 检查 Node.js 环境..."
-if ! command -v node &> /dev/null; then
-    echo ""
-    echo " [错误] 未找到 Node.js，请先安装 Node.js 18+"
-    echo "        下载地址: https://nodejs.org/"
-    echo ""
-    echo "[错误] 未找到 Node.js" >> "$LOG_FILE"
-    exit 1
-fi
-echo "       Node.js 版本: $(node -v)"
-
-# 获取脚本所在目录
-echo ""
-echo "[2/6] 检查安装目录..."
-MCP_DIR="$(cd "$(dirname "$0")" && pwd)"
-echo "       安装目录: $MCP_DIR"
-
-# 检查 package.json
-if [ ! -f "$MCP_DIR/package.json" ]; then
-    echo ""
-    echo " [错误] 未找到 package.json"
-    echo "        请确保将此脚本放在解压后的 MCP 目录中运行"
-    echo ""
-    echo "[错误] 未找到 package.json" >> "$LOG_FILE"
-    exit 1
-fi
-echo "       找到 package.json"
-
-# 设置路径
-SKILLS_DIR="$HOME/.claude/skills"
-CLAUDE_CONFIG="$HOME/Library/Application Support/Claude/claude_desktop_config.json"
-
-# 创建目录
-echo ""
-echo "[3/6] 创建必要目录..."
-mkdir -p "$SKILLS_DIR"
-echo "       Skills 目录: $SKILLS_DIR"
-
-# 切换目录
-cd "$MCP_DIR"
-
-# 安装依赖
-echo ""
-echo "[4/6] 安装 npm 依赖..."
-echo "       这可能需要几分钟，请耐心等待..."
-echo ""
-npm install --registry=https://registry.npmmirror.com 2>&1 | tee -a "$LOG_FILE"
-if [ \${PIPESTATUS[0]} -ne 0 ]; then
-    echo ""
-    echo " [错误] npm install 失败"
-    echo "        请检查网络连接或尝试手动执行: npm install"
-    echo ""
-    echo "[错误] npm install 失败" >> "$LOG_FILE"
-    exit 1
-fi
-echo ""
-echo "       依赖安装完成"
-
-# 构建
-echo ""
-echo "[5/6] 构建 MCP Server..."
-npm run build 2>&1 | tee -a "$LOG_FILE"
-if [ \${PIPESTATUS[0]} -ne 0 ]; then
-    echo ""
-    echo " [错误] npm run build 失败"
-    echo "        请检查是否有 TypeScript 编译错误"
-    echo ""
-    echo "[错误] npm run build 失败" >> "$LOG_FILE"
-    exit 1
-fi
-echo "       构建完成"
-
-# 安装 Skills
-echo ""
-echo "[6/6] 安装 Skills..."
-if [ -d "$MCP_DIR/skills" ]; then
-    cp -r "$MCP_DIR/skills/"* "$SKILLS_DIR/"
-    echo "       Skills 已复制到: $SKILLS_DIR"
-else
-    echo "       [警告] 未找到 skills 目录，跳过"
-fi
-
-# 配置 Claude Desktop
-echo ""
-echo "========================================================"
-echo "                 配置 Claude Desktop"
-echo "========================================================"
-echo ""
-
-mkdir -p "$(dirname "$CLAUDE_CONFIG")"
-
-# 写入配置
-MCP_PATH="$MCP_DIR/dist/index.js"
-cat > "$CLAUDE_CONFIG" << EOF
-{
-  "mcpServers": {
-    "hisi-dev-tool": {
-      "command": "node",
-      "args": ["$MCP_PATH"],
-      "env": {
-        "HISI_API_URL": "http://localhost:8080/api/callchain",
-        "HISI_LOG_API_URL": "http://localhost:8080/api/log"
-      }
+// 检查 MCP 状态
+async function checkMcpStatus() {
+  checkingStatus.value = true
+  try {
+    const response = await mcpApi.checkStatus(mcpDirInput.value || undefined)
+    mcpStatus.value = response.data
+    if (response.data.mcpDir && !mcpDirInput.value) {
+      mcpDirInput.value = response.data.mcpDir
     }
+  } catch {
+    mcpStatus.value = { installed: false, message: '检查状态失败' }
+  } finally {
+    checkingStatus.value = false
   }
 }
-EOF
 
-echo "       配置文件已创建: $CLAUDE_CONFIG"
-echo ""
-
-# 完成
-echo "========================================================"
-echo "                    安装成功!"
-echo "========================================================"
-echo ""
-echo "接下来的步骤:"
-echo ""
-echo "1. 重启 Claude Desktop（如果正在运行）"
-echo "2. 确保 hisi-dev-tool 后端服务正在运行"
-echo "   (访问 http://localhost:8080/api/claude/health 检查)"
-echo "3. 在 Claude Desktop 中测试:"
-echo "   输入 \"帮我分析调用链\" 或 \"查询错误日志\""
-echo ""
-echo "安装日志已保存到: $LOG_FILE"
-echo ""
-echo "========================================================"
-`
+// 在线安装
+async function startInstall() {
+  if (!mcpDirInput.value) {
+    ElMessage.warning('请输入 MCP 目录路径')
+    return
   }
-})
+
+  installing.value = true
+  installStep.value = ''
+  installLogs.value = []
+  installSuccess.value = false
+  installError.value = ''
+
+  try {
+    await mcpApi.install(mcpDirInput.value, {
+      onStep: (step) => {
+        installStep.value = step
+        installLogs.value.push(`[步骤] ${step}`)
+      },
+      onInfo: (info) => {
+        installLogs.value.push(`[信息] ${info}`)
+      },
+      onSuccess: (msg) => {
+        installLogs.value.push(`[成功] ${msg}`)
+      },
+      onWarning: (msg) => {
+        installLogs.value.push(`[警告] ${msg}`)
+      },
+      onError: (error) => {
+        installError.value = error
+        installLogs.value.push(`[错误] ${error}`)
+      },
+      onLog: (log) => {
+        installLogs.value.push(log)
+      },
+      onDone: () => {
+        installSuccess.value = true
+        installLogs.value.push('[完成] 安装成功！')
+        checkMcpStatus()
+      }
+    })
+  } catch (error) {
+    installError.value = (error as Error).message
+  } finally {
+    installing.value = false
+  }
+}
 
 // Claude 配置
 const claudeConfig = computed(() => {
@@ -403,19 +150,6 @@ async function copyText(text: string) {
   } catch {
     ElMessage.error('复制失败')
   }
-}
-
-// 下载脚本
-function downloadScript() {
-  const filename = isWindows ? 'install-mcp.bat' : 'install-mcp.sh'
-  const blob = new Blob([installScript.value], { type: 'text/plain' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  a.click()
-  URL.revokeObjectURL(url)
-  ElMessage.success('下载完成')
 }
 
 // 下载 MCP
@@ -475,12 +209,54 @@ const tools = [
         </div>
       </div>
 
-      <!-- 一键安装 -->
+      <!-- 安装状态卡片 -->
+      <el-card class="status-card">
+        <template #header>
+          <div class="card-header">
+            <span>MCP 安装状态</span>
+            <el-button size="small" @click="checkMcpStatus" :loading="checkingStatus">
+              刷新状态
+            </el-button>
+          </div>
+        </template>
+
+        <div v-if="mcpStatus" class="status-info">
+          <div class="status-item">
+            <el-icon v-if="mcpStatus.packageJsonExists" color="#67C23A"><SuccessFilled /></el-icon>
+            <el-icon v-else color="#F56C6C"><CircleCloseFilled /></el-icon>
+            <span>package.json</span>
+          </div>
+          <div class="status-item">
+            <el-icon v-if="mcpStatus.nodeModulesExists" color="#67C23A"><SuccessFilled /></el-icon>
+            <el-icon v-else color="#E6A23C"><WarningFilled /></el-icon>
+            <span>node_modules</span>
+          </div>
+          <div class="status-item">
+            <el-icon v-if="mcpStatus.distExists" color="#67C23A"><SuccessFilled /></el-icon>
+            <el-icon v-else color="#E6A23C"><WarningFilled /></el-icon>
+            <span>dist (构建产物)</span>
+          </div>
+          <div class="status-item">
+            <el-icon v-if="mcpStatus.claudeConfigExists" color="#67C23A"><SuccessFilled /></el-icon>
+            <el-icon v-else color="#E6A23C"><WarningFilled /></el-icon>
+            <span>Claude 配置</span>
+          </div>
+        </div>
+
+        <div v-if="mcpStatus?.installed" class="installed-badge">
+          <el-tag type="success" size="large">
+            <el-icon><SuccessFilled /></el-icon>
+            MCP 已安装
+          </el-tag>
+        </div>
+      </el-card>
+
+      <!-- 在线安装 -->
       <el-card class="install-card">
         <template #header>
           <div class="card-header">
-            <span>方式一：一键安装脚本（推荐）</span>
-            <el-tag type="success" size="small">自动配置</el-tag>
+            <span>方式一：在线安装（推荐）</span>
+            <el-tag type="success" size="small">实时进度</el-tag>
           </div>
         </template>
 
@@ -488,7 +264,7 @@ const tools = [
           <div class="step">
             <div class="step-num">1</div>
             <div class="step-content">
-              <strong>下载 MCP 包</strong>
+              <strong>下载 MCP 包并解压</strong>
               <el-button type="primary" :loading="downloading" @click="downloadMCP">
                 <el-icon><Download /></el-icon>
                 下载 MCP
@@ -499,17 +275,17 @@ const tools = [
           <div class="step">
             <div class="step-num">2</div>
             <div class="step-content">
-              <strong>解压并运行安装脚本</strong>
-              <p class="hint">解压后，将安装脚本放入解压目录并运行</p>
-              <div class="script-actions">
-                <el-button type="primary" @click="downloadScript">
-                  <el-icon><Download /></el-icon>
-                  下载安装脚本
-                </el-button>
-                <el-button @click="copyText(installScript)">
-                  <el-icon><CopyDocument /></el-icon>
-                  复制脚本内容
-                </el-button>
+              <strong>输入解压后的目录路径</strong>
+              <div class="dir-input">
+                <el-input
+                  v-model="mcpDirInput"
+                  placeholder="例如: C:\Users\用户名\projects\hisi-dev-tool-mcp"
+                  :disabled="installing"
+                >
+                  <template #prepend>
+                    <el-icon><FolderOpened /></el-icon>
+                  </template>
+                </el-input>
               </div>
             </div>
           </div>
@@ -517,8 +293,39 @@ const tools = [
           <div class="step">
             <div class="step-num">3</div>
             <div class="step-content">
-              <strong>重启 Claude Desktop</strong>
-              <p class="hint">关闭并重新打开 Claude Desktop</p>
+              <strong>点击安装按钮</strong>
+              <el-button
+                type="success"
+                :loading="installing"
+                :disabled="!mcpDirInput"
+                @click="startInstall"
+              >
+                <el-icon><Check /></el-icon>
+                {{ installing ? '安装中...' : '开始安装' }}
+              </el-button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 安装进度 -->
+        <div v-if="installing || installLogs.length > 0" class="install-progress">
+          <div class="progress-header">
+            <span v-if="installing" class="progress-title">
+              <el-icon class="is-loading"><Loading /></el-icon>
+              正在安装... {{ installStep }}
+            </span>
+            <span v-else-if="installSuccess" class="progress-title success">
+              <el-icon><SuccessFilled /></el-icon>
+              安装成功
+            </span>
+            <span v-else-if="installError" class="progress-title error">
+              <el-icon><CircleCloseFilled /></el-icon>
+              安装失败
+            </span>
+          </div>
+          <div class="log-container">
+            <div v-for="(log, index) in installLogs" :key="index" class="log-line">
+              {{ log }}
             </div>
           </div>
         </div>
@@ -665,14 +472,31 @@ const tools = [
   background: rgba(103, 194, 58, 0.3);
 }
 
-.install-card, .manual-card, .tools-card, .faq-card {
+.status-card, .install-card, .manual-card, .tools-card, .faq-card {
   margin-bottom: 16px;
 }
 
 .card-header {
   display: flex;
   align-items: center;
-  gap: 12px;
+  justify-content: space-between;
+}
+
+.status-info {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.status-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.installed-badge {
+  margin-top: 16px;
+  text-align: center;
 }
 
 .install-steps {
@@ -709,15 +533,63 @@ const tools = [
   margin-bottom: 8px;
 }
 
-.hint {
-  color: #909399;
-  font-size: 13px;
-  margin: 0 0 12px;
+.dir-input {
+  max-width: 500px;
 }
 
-.script-actions {
+.install-progress {
+  margin-top: 20px;
+  border: 1px solid #e4e7ed;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.progress-header {
+  padding: 12px 16px;
+  background: #f5f7fa;
+  border-bottom: 1px solid #e4e7ed;
+}
+
+.progress-title {
   display: flex;
-  gap: 12px;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+}
+
+.progress-title.success {
+  color: #67C23A;
+}
+
+.progress-title.error {
+  color: #F56C6C;
+}
+
+.log-container {
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 12px 16px;
+  background: #1e1e1e;
+  font-family: 'Consolas', monospace;
+  font-size: 13px;
+}
+
+.log-line {
+  color: #d4d4d4;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.log-line:has([错误]) {
+  color: #f56c6c;
+}
+
+.log-line:has([成功]) {
+  color: #67c23a;
+}
+
+.log-line:has([警告]) {
+  color: #e6a23c;
 }
 
 .code-block {
@@ -777,8 +649,9 @@ const tools = [
     grid-template-columns: 1fr;
   }
 
-  .script-actions {
+  .status-info {
     flex-direction: column;
+    gap: 12px;
   }
 }
 </style>

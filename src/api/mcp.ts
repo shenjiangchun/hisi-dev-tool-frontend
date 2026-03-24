@@ -25,6 +25,27 @@ export interface InstallScripts {
   unix: string
 }
 
+export interface McpStatus {
+  installed: boolean
+  message?: string
+  mcpDir?: string
+  packageJsonExists?: boolean
+  nodeModulesExists?: boolean
+  distExists?: boolean
+  claudeConfigPath?: string
+  claudeConfigExists?: boolean
+}
+
+export interface InstallCallbacks {
+  onStep?: (step: string) => void
+  onInfo?: (info: string) => void
+  onSuccess?: (msg: string) => void
+  onWarning?: (msg: string) => void
+  onError?: (error: string) => void
+  onLog?: (log: string) => void
+  onDone?: () => void
+}
+
 export const mcpApi = {
   /**
    * 获取 MCP 信息
@@ -53,5 +74,92 @@ export const mcpApi = {
    */
   async getInstallScripts(): Promise<{ data: InstallScripts }> {
     return request.get('/mcp/install-script')
+  },
+
+  /**
+   * 检查 MCP 安装状态
+   */
+  async checkStatus(mcpDir?: string): Promise<{ data: McpStatus }> {
+    return request.get('/mcp/status', { params: { mcpDir } })
+  },
+
+  /**
+   * 在线安装 MCP（流式）
+   */
+  install(mcpDir: string, callbacks: InstallCallbacks): Promise<void> {
+    return new Promise((resolve, reject) => {
+      fetch('/api/mcp/install', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mcpDir })
+      })
+        .then(response => {
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`)
+          }
+          const reader = response.body?.getReader()
+          if (!reader) throw new Error('No reader available')
+
+          const decoder = new TextDecoder()
+          let buffer = ''
+          let currentEvent = ''
+
+          const readChunk = (): Promise<void> => {
+            return reader.read().then(({ done, value }) => {
+              if (done) {
+                callbacks.onDone?.()
+                resolve()
+                return
+              }
+
+              buffer += decoder.decode(value, { stream: true })
+              const lines = buffer.split('\n')
+              buffer = lines.pop() || ''
+
+              for (const line of lines) {
+                if (line.startsWith('event:')) {
+                  currentEvent = line.slice(6).trim()
+                } else if (line.startsWith('data:')) {
+                  const data = line.slice(5).trim()
+                  switch (currentEvent) {
+                    case 'step':
+                      callbacks.onStep?.(data)
+                      break
+                    case 'info':
+                      callbacks.onInfo?.(data)
+                      break
+                    case 'success':
+                      callbacks.onSuccess?.(data)
+                      break
+                    case 'warning':
+                      callbacks.onWarning?.(data)
+                      break
+                    case 'error':
+                      callbacks.onError?.(data)
+                      reject(new Error(data))
+                      return
+                    case 'log':
+                      callbacks.onLog?.(data)
+                      break
+                    case 'done':
+                      callbacks.onDone?.()
+                      resolve()
+                      return
+                  }
+                  currentEvent = ''
+                }
+              }
+
+              return readChunk()
+            })
+          }
+
+          return readChunk()
+        })
+        .catch(error => {
+          callbacks.onError?.(error.message)
+          reject(error)
+        })
+    })
   }
 }
