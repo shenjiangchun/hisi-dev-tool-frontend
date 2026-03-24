@@ -381,6 +381,12 @@ const tools = [
             <!-- Claude Code CLI 配置 -->
             <div v-if="mcpStatus?.claudeCodeInstalled" class="manual-config">
               <h4>Claude Code CLI 配置</h4>
+              <el-alert type="warning" :closable="false" style="margin-bottom: 16px;">
+                <template #title>
+                  <strong>重要提示</strong>
+                </template>
+                Claude Code CLI 的 MCP 配置是<strong>按项目</strong>的，需要在目标项目目录下执行配置命令。
+              </el-alert>
               <el-steps direction="vertical" :active="2">
                 <el-step title="安装依赖并构建">
                   <template #description>
@@ -408,6 +414,15 @@ const tools = [
                   </template>
                 </el-step>
               </el-steps>
+
+              <el-divider content-position="left">全局配置（可选）</el-divider>
+              <p class="tip">如果想在所有项目中使用 MCP，可以手动编辑全局配置文件：</p>
+              <div class="code-block">
+                <p>编辑文件：<code>{{ isWindows ? '~\\.claude\\settings.json' : '~/.claude/settings.json' }}</code></p>
+                <p>在 <code>mcpServers</code> 中添加配置：</p>
+                <el-button class="copy-btn" size="small" @click="copyText(claudeDesktopConfig)">复制</el-button>
+                <pre><code>{{ claudeDesktopConfig }}</code></pre>
+              </div>
             </div>
 
             <!-- Claude Desktop 配置 -->
