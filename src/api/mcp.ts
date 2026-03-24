@@ -54,7 +54,7 @@ export const mcpApi = {
   /**
    * 获取 MCP 信息
    */
-  async getInfo(): Promise<{ data: McpInfo }> {
+  async getInfo(): Promise<McpInfo> {
     return request.get('/mcp/info')
   },
 
@@ -69,21 +69,21 @@ export const mcpApi = {
   /**
    * 获取配置模板
    */
-  async getConfigTemplate(): Promise<{ data: Record<string, unknown> }> {
+  async getConfigTemplate(): Promise<Record<string, unknown>> {
     return request.get('/mcp/config-template')
   },
 
   /**
    * 获取安装脚本
    */
-  async getInstallScripts(): Promise<{ data: InstallScripts }> {
+  async getInstallScripts(): Promise<InstallScripts> {
     return request.get('/mcp/install-script')
   },
 
   /**
    * 检查 MCP 安装状态
    */
-  async checkStatus(mcpDir?: string): Promise<{ data: McpStatus }> {
+  async checkStatus(mcpDir?: string): Promise<McpStatus> {
     return request.get('/mcp/status', { params: { mcpDir } })
   },
 

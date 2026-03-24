@@ -43,7 +43,8 @@ const projectDirInput = ref('')
 onMounted(async () => {
   try {
     const response = await mcpApi.getInfo()
-    mcpInfo.value = response.data as unknown as Record<string, unknown>
+    // response 已经是后端返回的数据（axios 拦截器已处理）
+    mcpInfo.value = response as unknown as Record<string, unknown>
     await checkBackend()
     await checkMcpStatus()
   } catch (error) {
@@ -71,9 +72,11 @@ async function checkMcpStatus() {
   checkingStatus.value = true
   try {
     const response = await mcpApi.checkStatus(mcpDirInput.value || undefined)
-    mcpStatus.value = response.data as ExtendedMcpStatus
-    if (response.data.mcpDir && !mcpDirInput.value) {
-      mcpDirInput.value = response.data.mcpDir
+    // response 已经是后端返回的数据（axios 拦截器已处理）
+    const data = response as unknown as ExtendedMcpStatus
+    mcpStatus.value = data
+    if (data.mcpDir && !mcpDirInput.value) {
+      mcpDirInput.value = data.mcpDir
     }
   } catch {
     mcpStatus.value = { installed: false, message: '检查状态失败' }
