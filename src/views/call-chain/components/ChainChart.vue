@@ -167,13 +167,22 @@
       class="context-menu"
       :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
     >
-      <div class="menu-item" @click="queryUpstream">
+      <div class="menu-item" @click="goToUpstream">
         <span class="menu-icon">↑</span>
-        <span>向上查询调用链</span>
+        <span>向上依赖分析</span>
+      </div>
+      <div class="menu-item" @click="goToDownstream">
+        <span class="menu-icon">↓</span>
+        <span>向下依赖分析</span>
+      </div>
+      <div class="menu-divider"></div>
+      <div class="menu-item" @click="queryUpstream">
+        <span class="menu-icon">🔍</span>
+        <span>向上查询调用链（弹窗）</span>
       </div>
       <div class="menu-item" @click="queryDownstream">
-        <span class="menu-icon">↓</span>
-        <span>向下查询调用链</span>
+        <span class="menu-icon">🔍</span>
+        <span>向下查询调用链（弹窗）</span>
       </div>
       <div class="menu-divider"></div>
       <div class="menu-item" @click="viewDetails">
@@ -287,6 +296,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'node-click', node: ChainNode, event: MouseEvent): void
   (e: 'recursive-query', type: 'upstream' | 'downstream', method: string, className: string): void
+  (e: 'navigate-method-ref', direction: 'up' | 'down', className: string, methodName: string): void
 }>()
 
 const viewMode = ref<'tree' | 'flow' | 'list'>('tree')
@@ -446,6 +456,22 @@ const queryDownstream = async () => {
 
   const method = buildMethodSignature(node)
   await doRecursiveQuery('downstream', method)
+}
+
+// 跳转到方法引用分析页面 - 向上
+const goToUpstream = () => {
+  hideContextMenu()
+  const node = contextMenu.value.node
+  if (!node) return
+  emit('navigate-method-ref', 'up', node.className || '', node.name || '')
+}
+
+// 跳转到方法引用分析页面 - 向下
+const goToDownstream = () => {
+  hideContextMenu()
+  const node = contextMenu.value.node
+  if (!node) return
+  emit('navigate-method-ref', 'down', node.className || '', node.name || '')
 }
 
 // 查看详情

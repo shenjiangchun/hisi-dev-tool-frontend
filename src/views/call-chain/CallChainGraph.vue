@@ -46,6 +46,7 @@
         :data="chainData"
         :loading="loading"
         @node-contextmenu="handleContextMenu"
+        @navigate-method-ref="handleNavigateMethodRef"
       />
     </el-card>
 
@@ -260,6 +261,18 @@ const handleContextMenu = (payload: { event: MouseEvent; node: ChainNode } | Cha
 const closeContextMenu = () => {
   contextMenuVisible.value = false
   contextMenuNode.value = null
+}
+
+// 处理跳转到方法引用分析页面
+const handleNavigateMethodRef = (direction: 'up' | 'down', className: string, methodName: string) => {
+  router.push({
+    path: '/call-chain/method-reference',
+    query: {
+      className,
+      methodName,
+      direction
+    }
+  })
 }
 
 const handleMenuAction = (action: string, node: ChainNode) => {
