@@ -268,7 +268,7 @@
     </el-card>
 
     <!-- 日志详情弹窗 -->
-    <el-dialog v-model="detailVisible" title="日志详情" width="800px">
+    <el-dialog v-model="detailVisible" title="日志详情" width="800px" append-to-body>
       <div class="log-detail" v-if="selectedLog">
         <el-descriptions :column="2" border>
           <el-descriptions-item label="时间">{{ selectedLog.timestamp }}</el-descriptions-item>
@@ -280,18 +280,88 @@
           <el-descriptions-item label="主机">{{ selectedLog.hostname || '-' }}</el-descriptions-item>
           <el-descriptions-item label="Pod">{{ selectedLog.podName || '-' }}</el-descriptions-item>
           <el-descriptions-item label="命名空间">{{ selectedLog.namespace || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="错误类型">{{ selectedLog.errorType || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="错误类型">
+            <el-tag v-if="parsedLogDetail?.errorType" type="danger">{{ parsedLogDetail.errorType }}</el-tag>
+            <span v-else>{{ selectedLog.errorType || '-' }}</span>
+          </el-descriptions-item>
           <el-descriptions-item label="日志源" :span="2">{{ selectedLog.logSource || '-' }}</el-descriptions-item>
         </el-descriptions>
 
-        <div class="detail-section" v-if="selectedLog.message">
-          <div class="section-title">日志消息</div>
-          <pre class="message-content">{{ selectedLog.message }}</pre>
+        <!-- 解析后的错误信息 -->
+        <div class="detail-section" v-if="parsedLogDetail?.parseSuccess">
+          <div class="section-title error-title">
+            <el-icon color="#f56c6c"><Warning /></el-icon>
+            错误信息
+          </div>
+          <div class="error-info-card">
+            <div class="error-type-row" v-if="parsedLogDetail.errorType">
+              <span class="label">异常类型:</span>
+              <el-tag type="danger" effect="dark">{{ parsedLogDetail.errorType }}</el-tag>
+            </div>
+            <div class="error-msg-row" v-if="parsedLogDetail.errorMessage">
+              <span class="label">错误描述:</span>
+              <code class="error-message">{{ parsedLogDetail.errorMessage }}</code>
+            </div>
+            <div class="error-header-row" v-if="parsedLogDetail.headerMessage && parsedLogDetail.headerMessage !== parsedLogDetail.errorMessage">
+              <span class="label">日志上下文:</span>
+              <span class="header-message">{{ parsedLogDetail.headerMessage }}</span>
+            </div>
+          </div>
         </div>
 
-        <div class="detail-section" v-if="selectedLog.stackTrace">
-          <div class="section-title">堆栈信息</div>
-          <pre class="stack-content">{{ selectedLog.stackTrace }}</pre>
+        <!-- 结构化堆栈信息 -->
+        <div class="detail-section" v-if="parsedLogDetail?.stackFrames?.length">
+          <div class="section-title">
+            <el-icon><Document /></el-icon>
+            调用栈 ({{ parsedLogDetail.stackFrames.length }} 帧)
+          </div>
+          <div class="stack-frames">
+            <div
+              v-for="(frame, index) in parsedLogDetail.stackFrames"
+              :key="index"
+              class="stack-frame"
+              :class="{ 'frame-project': !isFrameworkFrame(frame.className) }"
+            >
+              <span class="frame-index">{{ index + 1 }}</span>
+              <span class="frame-class">{{ frame.className }}</span>
+              <span class="frame-method">.{{ frame.methodName }}</span>
+              <span class="frame-location">({{ frame.fileName }}:{{ frame.lineNumber || 'N/A' }})</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Caused by 链 -->
+        <div class="detail-section" v-if="parsedLogDetail?.causedByChain?.length">
+          <div class="section-title caused-by-title">
+            <el-icon color="#e6a23c"><Cpu /></el-icon>
+            Caused By ({{ parsedLogDetail.causedByChain.length }} 层)
+          </div>
+          <div class="caused-by-chain">
+            <div v-for="(cause, index) in parsedLogDetail.causedByChain" :key="index" class="caused-by-item">
+              <div class="cause-header">
+                <el-tag type="warning" size="small">{{ cause.errorType }}</el-tag>
+                <code class="cause-message">{{ cause.errorMessage }}</code>
+              </div>
+              <div class="cause-frames" v-if="cause.stackFrames.length">
+                <div v-for="(frame, fIndex) in cause.stackFrames.slice(0, 3)" :key="fIndex" class="stack-frame compact">
+                  <span class="frame-class">{{ frame.className }}</span>
+                  <span class="frame-method">.{{ frame.methodName }}</span>
+                </div>
+                <div v-if="cause.stackFrames.length > 3" class="more-frames">
+                  ... {{ cause.stackFrames.length - 3 }} more
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 原始日志消息 -->
+        <div class="detail-section" v-if="selectedLog.message">
+          <el-collapse>
+            <el-collapse-item title="查看原始日志">
+              <pre class="message-content raw-log">{{ selectedLog.message }}</pre>
+            </el-collapse-item>
+          </el-collapse>
         </div>
 
         <div class="detail-section" v-if="selectedLog.rawFields">
@@ -400,12 +470,39 @@ import { logAnalysisApi } from '@/api/logAnalysis'
 import { claudeApi } from '@/api/claude'
 import type { LogEntry } from '@/types/log'
 import type { ClaudeAnalysisResult } from '@/api/claude'
+import { parseJavaErrorLog, formatForAnalysis, type ParsedErrorLog } from '@/utils/logParser'
 
 const router = useRouter()
 const loading = ref(false)
 const logs = ref<LogEntry[]>([])
 const detailVisible = ref(false)
 const selectedLog = ref<LogEntry | null>(null)
+
+// 解析选中日志的详情
+const parsedLogDetail = computed<ParsedErrorLog | null>(() => {
+  if (!selectedLog.value) return null
+  const rawLog = selectedLog.value.message || selectedLog.value.stackTrace || ''
+  if (!rawLog) return null
+  return parseJavaErrorLog(rawLog)
+})
+
+// 判断是否为框架代码
+const isFrameworkFrame = (className: string): boolean => {
+  const frameworkPrefixes = [
+    'java.',
+    'javax.',
+    'sun.',
+    'org.springframework.',
+    'org.apache.',
+    'com.zaxxer.',
+    'io.undertow.',
+    'org.jboss.',
+    'org.eclipse.',
+    'ch.qos.logback.',
+    'org.slf4j.'
+  ]
+  return frameworkPrefixes.some(prefix => className.startsWith(prefix))
+}
 
 // DSL 配置化
 interface DslCondition {
@@ -876,12 +973,27 @@ const handleAnalyze = async (row: MockLogEntry) => {
   analysisLoading.value = true
 
   try {
-    // 使用流式 API
+    // 解析日志，区分错误信息和堆栈信息
+    const rawLog = row.message || row.stackTrace || ''
+    const parsed = parseJavaErrorLog(rawLog)
+    const formatted = formatForAnalysis(parsed)
+
+    console.log('解析后的日志结构:', {
+      errorType: formatted.errorType,
+      errorMessage: formatted.errorMessage,
+      stackFramesCount: parsed.stackFrames.length,
+      causedByCount: parsed.causedByChain.length
+    })
+
+    // 使用流式 API，传递结构化的分析参数
     abortController.value = claudeApi.streamAnalyze(
       {
-        errorMessage: row.message || '',
-        stackTrace: row.stackTrace || undefined,
-        projectPath: row.serviceName || undefined
+        errorMessage: formatted.errorSummary || formatted.errorMessage || rawLog,
+        errorType: formatted.errorType || undefined,
+        errorMessageDetail: formatted.errorMessage || undefined,
+        stackTrace: formatted.stackTrace || parsed.rawStackTrace || undefined,
+        causedBy: formatted.causedBy || undefined,
+        projectPath: row.serviceName || parsed.loggerName || undefined
       },
       {
         onSession: (sessionId) => {
@@ -1370,5 +1482,169 @@ const closeAnalysisDialog = () => {
   display: flex;
   justify-content: flex-end;
   gap: 12px;
+}
+
+/* 解析后的错误信息样式 */
+.error-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-left-color: #f56c6c;
+  color: #f56c6c;
+}
+
+.error-info-card {
+  background: #fef0f0;
+  border-radius: 8px;
+  padding: 16px;
+  border: 1px solid #fbc4c4;
+}
+
+.error-info-card .label {
+  font-size: 13px;
+  color: #909399;
+  margin-right: 8px;
+}
+
+.error-type-row {
+  margin-bottom: 12px;
+}
+
+.error-msg-row {
+  margin-bottom: 12px;
+}
+
+.error-message {
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 13px;
+  color: #303133;
+  background: #fff;
+  padding: 8px 12px;
+  border-radius: 4px;
+  display: block;
+  margin-top: 4px;
+  line-height: 1.5;
+}
+
+.error-header-row {
+  padding-top: 12px;
+  border-top: 1px dashed #fbc4c4;
+}
+
+.header-message {
+  font-size: 13px;
+  color: #606266;
+  line-height: 1.5;
+}
+
+/* 堆栈帧样式 */
+.stack-frames {
+  background: #1e1e1e;
+  border-radius: 8px;
+  padding: 12px;
+  max-height: 350px;
+  overflow-y: auto;
+}
+
+.stack-frame {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 12px;
+  color: #abb2bf;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.stack-frame:hover {
+  background: #2c313a;
+}
+
+.stack-frame.frame-project {
+  color: #98c379;
+  background: rgba(152, 195, 121, 0.1);
+}
+
+.stack-frame.frame-project:hover {
+  background: rgba(152, 195, 121, 0.2);
+}
+
+.frame-index {
+  color: #5c6370;
+  min-width: 24px;
+  text-align: right;
+}
+
+.frame-class {
+  color: #e5c07b;
+}
+
+.frame-method {
+  color: #61afef;
+}
+
+.frame-location {
+  color: #56b6c2;
+}
+
+.stack-frame.compact {
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
+/* Caused By 链样式 */
+.caused-by-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-left-color: #e6a23c;
+  color: #e6a23c;
+}
+
+.caused-by-chain {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.caused-by-item {
+  background: #fdf6ec;
+  border-radius: 8px;
+  padding: 12px;
+  border: 1px solid #f5dab1;
+}
+
+.cause-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.cause-message {
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 12px;
+  color: #606266;
+}
+
+.cause-frames {
+  padding-left: 12px;
+  border-left: 2px solid #e6a23c;
+  margin-top: 8px;
+}
+
+.more-frames {
+  font-size: 11px;
+  color: #909399;
+  padding-left: 8px;
+  font-style: italic;
+}
+
+/* 原始日志折叠样式 */
+.raw-log {
+  font-size: 11px;
+  max-height: 250px;
 }
 </style>

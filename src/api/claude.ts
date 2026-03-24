@@ -1,9 +1,19 @@
 import request from '@/utils/request'
 
 export interface AnalyzeLogRequest {
+  /** 错误摘要（日志头+异常类型+消息） */
   errorMessage: string
+  /** 异常类型，如 NullPointerException */
+  errorType?: string
+  /** 异常详细消息 */
+  errorMessageDetail?: string
+  /** 结构化的堆栈信息 */
   stackTrace?: string
+  /** Caused by 链 */
+  causedBy?: string
+  /** 项目路径或服务名 */
   projectPath?: string
+  /** 额外上下文 */
   additionalContext?: string
 }
 
@@ -61,14 +71,20 @@ export const claudeApi = {
   streamAnalyze(
     params: {
       errorMessage: string
+      errorType?: string
+      errorMessageDetail?: string
       stackTrace?: string
+      causedBy?: string
       projectPath?: string
     },
     callbacks: StreamCallbacks
   ): () => void {
     const queryParams = new URLSearchParams()
     queryParams.append('errorMessage', params.errorMessage)
+    if (params.errorType) queryParams.append('errorType', params.errorType)
+    if (params.errorMessageDetail) queryParams.append('errorMessageDetail', params.errorMessageDetail)
     if (params.stackTrace) queryParams.append('stackTrace', params.stackTrace)
+    if (params.causedBy) queryParams.append('causedBy', params.causedBy)
     if (params.projectPath) queryParams.append('projectPath', params.projectPath)
 
     const url = `/api/claude/stream?${queryParams.toString()}`
