@@ -237,7 +237,19 @@ const loadCallChain = async () => {
   }
 }
 
-const handleContextMenu = (node: ChainNode, event: MouseEvent) => {
+const handleContextMenu = (payload: { event: MouseEvent; node: ChainNode } | ChainNode, maybeEvent?: MouseEvent) => {
+  // 兼容两种调用方式
+  let event: MouseEvent
+  let node: ChainNode
+
+  if (payload && 'event' in payload && 'node' in payload) {
+    event = payload.event
+    node = payload.node
+  } else {
+    event = maybeEvent!
+    node = payload as ChainNode
+  }
+
   event.preventDefault()
   contextMenuNode.value = node
   contextMenuX.value = event.clientX
