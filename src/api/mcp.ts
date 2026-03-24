@@ -89,13 +89,16 @@ export const mcpApi = {
 
   /**
    * 在线安装 MCP（流式）
+   * @param mcpDir MCP 项目目录
+   * @param callbacks 回调函数
+   * @param projectDir 目标项目目录（可选，用于配置 MCP）
    */
-  install(mcpDir: string, callbacks: InstallCallbacks): Promise<void> {
+  install(mcpDir: string, callbacks: InstallCallbacks, projectDir?: string): Promise<void> {
     return new Promise((resolve, reject) => {
       fetch('/api/mcp/install', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mcpDir })
+        body: JSON.stringify({ mcpDir, projectDir })
       })
         .then(response => {
           if (!response.ok) {

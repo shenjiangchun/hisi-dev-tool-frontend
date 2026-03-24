@@ -36,6 +36,8 @@ const installError = ref('')
 
 // MCP 目录输入
 const mcpDirInput = ref('')
+// 目标项目目录（用于配置 MCP）
+const projectDirInput = ref('')
 
 // 加载 MCP 信息
 onMounted(async () => {
@@ -120,7 +122,7 @@ async function startInstall() {
         installLogs.value.push('[完成] 安装成功！')
         checkMcpStatus()
       }
-    })
+    }, projectDirInput.value || undefined)
   } catch (error) {
     installError.value = (error as Error).message
   } finally {
@@ -316,6 +318,27 @@ const tools = [
                 <el-input
                   v-model="mcpDirInput"
                   placeholder="例如: C:\Users\用户名\projects\hisi-dev-tool-mcp"
+                  :disabled="installing"
+                >
+                  <template #prepend>
+                    <el-icon><FolderOpened /></el-icon>
+                  </template>
+                </el-input>
+              </div>
+            </div>
+          </div>
+
+          <div class="step" v-if="mcpStatus?.claudeCodeInstalled">
+            <div class="step-num">2.5</div>
+            <div class="step-content">
+              <strong>输入目标项目目录（可选）</strong>
+              <el-alert type="info" :closable="false" style="margin-bottom: 8px;">
+                MCP 配置是按项目的。留空则配置到后端服务运行目录，建议填入您实际使用 Claude 的项目目录。
+              </el-alert>
+              <div class="dir-input">
+                <el-input
+                  v-model="projectDirInput"
+                  placeholder="例如: C:\Users\用户名\projects\my-project"
                   :disabled="installing"
                 >
                   <template #prepend>
