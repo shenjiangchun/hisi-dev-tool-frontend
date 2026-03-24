@@ -3,15 +3,19 @@
     <el-card header="日志查询">
       <el-form :model="queryForm" label-width="100px">
         <el-row :gutter="20">
-          <el-col :span="16">
+          <el-col :span="24">
             <!-- DSL 配置化构建 -->
             <el-card shadow="never" class="dsl-builder-card">
               <template #header>
                 <div class="dsl-builder-header">
                   <span>DSL 查询配置</span>
-                  <el-button type="primary" size="small" @click="previewDsl">
-                    预览 DSL
-                  </el-button>
+                  <div class="dsl-header-actions">
+                    <el-button type="primary" @click="handleQuery" :loading="loading">
+                      <el-icon><Search /></el-icon>
+                      查询
+                    </el-button>
+                    <el-button @click="handleReset">重置</el-button>
+                  </div>
                 </div>
               </template>
 
@@ -115,12 +119,12 @@
                   <el-button type="danger" :icon="Delete" circle size="small" @click="removeCondition('should', index)" />
                 </div>
                 <el-row :gutter="10" style="margin-top: 8px">
-                  <el-col :span="auto">
+                  <el-col :span="12">
                     <el-button type="primary" size="small" @click="addCondition('should')">
                       <el-icon><Plus /></el-icon> 添加 Should 条件
                     </el-button>
                   </el-col>
-                  <el-col :span="auto">
+                  <el-col :span="12">
                     <el-button size="small" @click="addPresetCondition">
                       <el-icon><Plus /></el-icon> 快速添加错误模式
                     </el-button>
@@ -167,29 +171,25 @@
                   <el-button size="small" type="warning" @click="clearManualDsl">清空</el-button>
                 </div>
               </div>
-            </el-card>
-          </el-col>
 
-          <el-col :span="8">
-            <el-form-item label="快速筛选">
-              <div class="quick-filters">
-                <el-select v-model="queryForm.logLevel" clearable placeholder="日志级别" style="width: 120px">
-                  <el-option label="ERROR" value="ERROR" />
-                  <el-option label="WARN" value="WARN" />
-                  <el-option label="INFO" value="INFO" />
-                  <el-option label="DEBUG" value="DEBUG" />
-                </el-select>
-                <el-input v-model="queryForm.keyword" placeholder="关键词" style="width: 150px" clearable />
-                <el-input v-model="queryForm.traceId" placeholder="TraceID" style="width: 150px" clearable />
+              <!-- 推荐查询 -->
+              <el-divider content-position="left">推荐查询</el-divider>
+              <div class="recommended-queries">
+                <el-card
+                  v-for="(query, index) in recommendedQueries"
+                  :key="index"
+                  shadow="hover"
+                  class="query-card"
+                  @click="applyRecommendedQuery(query.dsl)"
+                >
+                  <div class="query-card-header">
+                    <el-icon><Search /></el-icon>
+                    <span>{{ query.title }}</span>
+                  </div>
+                  <p class="query-desc">{{ query.description }}</p>
+                </el-card>
               </div>
-            </el-form-item>
-            <el-form-item>
-              <el-button type="primary" @click="handleQuery" :loading="loading">
-                <el-icon><Search /></el-icon>
-                查询
-              </el-button>
-              <el-button @click="handleReset">重置</el-button>
-            </el-form-item>
+            </el-card>
           </el-col>
         </el-row>
       </el-form>
@@ -463,16 +463,13 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, nextTick } from 'vue'
-import { useRouter } from 'vue-router'
-import { Search, Loading, Document, Warning, Cpu, Check, Right, Delete, Plus } from '@element-plus/icons-vue'
+import { Search, Loading, Document, Warning, Cpu, Check, Delete, Plus } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { logAnalysisApi } from '@/api/logAnalysis'
 import { claudeApi } from '@/api/claude'
 import type { LogEntry } from '@/types/log'
-import type { ClaudeAnalysisResult } from '@/api/claude'
 import { parseJavaErrorLog, formatForAnalysis, type ParsedErrorLog } from '@/utils/logParser'
 
-const router = useRouter()
 const loading = ref(false)
 const logs = ref<LogEntry[]>([])
 const detailVisible = ref(false)
@@ -533,6 +530,97 @@ const dslConfig = reactive({
 const generatedDsl = ref('')
 const dslCollapseActive = ref(['dsl'])
 const manualDsl = ref('')
+
+// 推荐查询
+const recommendedQueries = [
+  {
+    title: '错误日志查询',
+    description: '查询最近 15 分钟的所有错误日志',
+    dsl: `{
+  "size": 20,
+  "query": {
+    "bool": {
+      "must": [
+        { "range": { "@timestamp": { "gte": "now-15m" } } }
+      ],
+      "should": [
+        { "match_phrase": { "message": "Caused by:" } },
+        { "match_phrase": { "message": "*ExceptionHandler" } },
+        { "match": { "level": "ERROR" } },
+        { "match": { "level": "SEVERE" } },
+        { "match_phrase": { "message": ".*Exception" } },
+        { "match_phrase": { "message": ".*Error" } },
+        { "match_phrase": { "message": "at org.springframework" } }
+      ],
+      "minimum_should_match": 1
+    }
+  }
+}`
+  },
+  {
+    title: 'NullPointerException',
+    description: '查询空指针异常日志',
+    dsl: `{
+  "size": 20,
+  "query": {
+    "bool": {
+      "must": [
+        { "range": { "@timestamp": { "gte": "now-1h" } } },
+        { "match_phrase": { "message": "NullPointerException" } }
+      ]
+    }
+  }
+}`
+  },
+  {
+    title: '数据库异常',
+    description: '查询数据库相关错误',
+    dsl: `{
+  "size": 20,
+  "query": {
+    "bool": {
+      "must": [
+        { "range": { "@timestamp": { "gte": "now-1h" } } }
+      ],
+      "should": [
+        { "match_phrase": { "message": "SQLException" } },
+        { "match_phrase": { "message": "DataAccessException" } },
+        { "match_phrase": { "message": "Connection refused" } },
+        { "match_phrase": { "message": "Timeout" } }
+      ],
+      "minimum_should_match": 1
+    }
+  }
+}`
+  },
+  {
+    title: 'Spring 异常',
+    description: '查询 Spring 框架相关错误',
+    dsl: `{
+  "size": 20,
+  "query": {
+    "bool": {
+      "must": [
+        { "range": { "@timestamp": { "gte": "now-1h" } } }
+      ],
+      "should": [
+        { "match_phrase": { "message": "at org.springframework" } },
+        { "match_phrase": { "message": "BeanCreationException" } },
+        { "match_phrase": { "message": "NoSuchBeanDefinitionException" } },
+        { "match_phrase": { "message": "HttpMessageNotReadableException" } }
+      ],
+      "minimum_should_match": 1
+    }
+  }
+}`
+  }
+]
+
+// 应用推荐查询
+const applyRecommendedQuery = (dsl: string) => {
+  manualDsl.value = dsl
+  ElMessage.success('已加载推荐查询，点击"查询"按钮执行')
+}
 
 // 生成 DSL JSON
 const buildDslQuery = () => {
@@ -797,31 +885,21 @@ const handleQuery = async () => {
       generatedDsl.value = dslJsonString
     }
 
-    // ========== MOCK 模式：非华为内网环境测试 ==========
-    // TODO: 测试完成后将 mockMode 设为 false，恢复真实 API 调用
-    const mockMode = true
-    if (mockMode) {
-      console.log('【MOCK 模式】返回模拟错误日志数据')
-      const mockLogs = createMockLogs()
-      logs.value = mockLogs
-      pagination.total = mockLogs.length
-      loading.value = false
-      return
-    }
-    // ========== MOCK 模式结束 ==========
+    console.log('执行 DSL 查询:', dslJsonString)
 
     const params: any = {
       dslQuery: dslJsonString
     }
 
-    // 如果有快速筛选条件，添加到参数中
-    if (queryForm.logLevel) params.logLevel = queryForm.logLevel
-    if (queryForm.keyword) params.keyword = queryForm.keyword
-    if (queryForm.traceId) params.traceId = queryForm.traceId
-
     const res = await logAnalysisApi.queryLogs(params)
     logs.value = res.data?.logs || []
     pagination.total = res.data?.total || 0
+
+    if (logs.value.length === 0) {
+      ElMessage.info('未查询到符合条件的日志')
+    } else {
+      ElMessage.success(`查询成功，共 ${pagination.total} 条记录`)
+    }
 
   } catch (error: any) {
     ElMessage.error(`查询失败: ${error.message || '请稍后重试'}`)
@@ -848,6 +926,7 @@ interface MockLogEntry {
   lineCount: number
 }
 
+// @ts-ignore - 保留用于本地测试
 const createMockLogs = (): MockLogEntry[] => {
   const now = new Date()
 
@@ -1155,10 +1234,51 @@ const closeAnalysisDialog = () => {
   margin-top: 8px;
 }
 
-.quick-filters {
-  display: flex;
+.recommended-queries {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
   gap: 12px;
-  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.query-card {
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 1px solid #e4e7ed;
+}
+
+.query-card:hover {
+  border-color: #409EFF;
+  box-shadow: 0 2px 12px rgba(64, 158, 255, 0.2);
+}
+
+.query-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+  color: #303133;
+}
+
+.query-card-header .el-icon {
+  color: #409EFF;
+}
+
+.query-desc {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #909399;
+}
+
+.dsl-builder-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.dsl-header-actions {
+  display: flex;
+  gap: 8px;
 }
 
 .result-header {
