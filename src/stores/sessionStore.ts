@@ -16,6 +16,10 @@ export const useSessionStore = defineStore('session', () => {
 
   // 当前正在流式传输的会话 ID
   const streamingSessionId = ref<string | null>(null)
+  // 流式传输的内容缓存（用于页面跳转后恢复显示）
+  const streamingContent = ref<string>('')
+  // 流式传输状态
+  const isStreaming = ref(false)
 
   // 计算属性
   const currentSession = computed(() =>
@@ -95,6 +99,29 @@ export const useSessionStore = defineStore('session', () => {
    */
   function setStreamingSession(sessionId: string | null) {
     streamingSessionId.value = sessionId
+    if (sessionId) {
+      isStreaming.value = true
+      streamingContent.value = ''
+    } else {
+      isStreaming.value = false
+      streamingContent.value = ''
+    }
+  }
+
+  /**
+   * 追加流式内容
+   */
+  function appendStreamingContent(content: string) {
+    streamingContent.value += content
+  }
+
+  /**
+   * 清空流式内容
+   */
+  function clearStreamingContent() {
+    streamingContent.value = ''
+    isStreaming.value = false
+    streamingSessionId.value = null
   }
 
   /**
@@ -223,6 +250,8 @@ export const useSessionStore = defineStore('session', () => {
     loading,
     total,
     streamingSessionId,
+    streamingContent,
+    isStreaming,
     // 计算属性
     currentSession,
     activeSessions,
@@ -232,6 +261,8 @@ export const useSessionStore = defineStore('session', () => {
     loadSessionDetail,
     setCurrentSession,
     setStreamingSession,
+    appendStreamingContent,
+    clearStreamingContent,
     addMessageToSession,
     addMessage,
     clearCurrentMessages,

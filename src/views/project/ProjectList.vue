@@ -255,6 +255,7 @@ import { claudeApi } from '@/api/claude'
 import { usePromptStore } from '@/stores/promptStore'
 import type { CallChainTask } from '@/types/callchain'
 import { useAppStore } from '@/stores/app'
+import { useSessionStore } from '@/stores/sessionStore'
 import ProjectDirConfig from '@/components/ProjectDirConfig.vue'
 import GitOperations from '@/components/GitOperations.vue'
 import type { GitRepositoryInfo } from '@/types/callchain'
@@ -262,6 +263,7 @@ import type { GitRepositoryInfo } from '@/types/callchain'
 const router = useRouter()
 const appStore = useAppStore()
 const promptStore = usePromptStore()
+const sessionStore = useSessionStore()
 
 const loading = ref(false)
 const cloning = ref(false)
@@ -667,16 +669,32 @@ const handleCodeAnalysis = async () => {
       },
       {
         onSession: (sessionId) => {
-          // 收到 sessionId 后立即跳转
+          // 收到 sessionId 后设置流式状态并跳转
           newSessionId = sessionId
+          sessionStore.setStreamingSession(sessionId)
           commitDialogVisible.value = false
           router.push({ name: 'ClaudeSession', query: { sessionId } })
         },
-        onOutput: () => {},
+        onOutput: (content) => {
+          // 将输出追加到全局状态
+          sessionStore.appendStreamingContent(content)
+        },
         onDone: () => {
+          // 流式完成，添加助手消息
+          if (sessionStore.streamingSessionId) {
+            sessionStore.addMessageToSession(sessionStore.streamingSessionId, {
+              id: Date.now(),
+              sessionId: sessionStore.streamingSessionId,
+              role: 'assistant',
+              content: sessionStore.streamingContent,
+              createdAt: new Date().toISOString()
+            })
+          }
+          sessionStore.clearStreamingContent()
           ElMessage.success('分析完成')
         },
         onError: (error) => {
+          sessionStore.clearStreamingContent()
           ElMessage.error(`分析失败: ${error}`)
         }
       }
@@ -725,16 +743,32 @@ const handleImpactAnalysis = async () => {
       },
       {
         onSession: (sessionId) => {
-          // 收到 sessionId 后立即跳转
+          // 收到 sessionId 后设置流式状态并跳转
           newSessionId = sessionId
+          sessionStore.setStreamingSession(sessionId)
           commitDialogVisible.value = false
           router.push({ name: 'ClaudeSession', query: { sessionId } })
         },
-        onOutput: () => {},
+        onOutput: (content) => {
+          // 将输出追加到全局状态
+          sessionStore.appendStreamingContent(content)
+        },
         onDone: () => {
+          // 流式完成，添加助手消息
+          if (sessionStore.streamingSessionId) {
+            sessionStore.addMessageToSession(sessionStore.streamingSessionId, {
+              id: Date.now(),
+              sessionId: sessionStore.streamingSessionId,
+              role: 'assistant',
+              content: sessionStore.streamingContent,
+              createdAt: new Date().toISOString()
+            })
+          }
+          sessionStore.clearStreamingContent()
           ElMessage.success('分析完成')
         },
         onError: (error) => {
+          sessionStore.clearStreamingContent()
           ElMessage.error(`分析失败: ${error}`)
         }
       }

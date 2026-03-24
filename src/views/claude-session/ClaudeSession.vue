@@ -178,6 +178,30 @@ const streaming = ref(false)
 const streamingContent = ref('')
 const messageListRef = ref<HTMLElement | null>(null)
 
+// 监听全局流式状态
+watch(
+  () => sessionStore.isStreaming,
+  (isStreaming) => {
+    if (isStreaming && sessionStore.streamingSessionId === sessionStore.currentSessionId) {
+      streaming.value = true
+    } else {
+      streaming.value = false
+    }
+  },
+  { immediate: true }
+)
+
+// 监听全局流式内容
+watch(
+  () => sessionStore.streamingContent,
+  (content) => {
+    if (sessionStore.isStreaming && sessionStore.streamingSessionId === sessionStore.currentSessionId) {
+      streamingContent.value = content
+      scrollToBottom()
+    }
+  }
+)
+
 // 计算属性
 const filteredActiveSessions = computed(() => {
   const keyword = searchKeyword.value.toLowerCase()
