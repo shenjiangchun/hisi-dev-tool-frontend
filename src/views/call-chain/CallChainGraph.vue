@@ -31,6 +31,15 @@
         <el-button type="primary" @click="loadCallChain" :loading="loading" :disabled="!selectedUri || !selectedProject">
           查询
         </el-button>
+        <el-button
+          type="success"
+          @click="handleAIAnalysis"
+          :loading="analysisLoading"
+          :disabled="!chainData"
+        >
+          <el-icon><ChatDotRound /></el-icon>
+          AI 调用链分析
+        </el-button>
       </div>
 
       <ChainChart
@@ -52,10 +61,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { ChatDotRound } from '@element-plus/icons-vue'
 import { callChainApi } from '@/api/callChain'
+import { claudeApi } from '@/api/claude'
+import { useAppStore } from '@/stores/app'
+import { usePromptStore } from '@/stores/promptStore'
 import type { CallChainRawData } from '@/types/callchain'
 import UriSelector from './components/UriSelector.vue'
 import ChainChart from './components/ChainChart.vue'
@@ -72,11 +85,15 @@ interface ChainNode {
 
 const route = useRoute()
 const router = useRouter()
+const appStore = useAppStore()
+const promptStore = usePromptStore()
 
+const projectName = computed(() => appStore.selectedProject || '')
 const projects = ref<string[]>([])
 const selectedProject = ref(route.query.project as string || '')
 const selectedUri = ref(route.query.uri as string || '')
 const loading = ref(false)
+const analysisLoading = ref(false)
 const chainData = ref<ChainNode | null>(null)
 
 // 右键菜单状态
@@ -259,6 +276,46 @@ const handleMenuAction = (action: string, node: ChainNode) => {
         }
       })
       break
+  }
+}
+
+// Handle AI analysis for call chain
+const handleAIAnalysis = async () => {
+  if (!chainData.value || !selectedUri.value) return
+
+  analysisLoading.value = true
+  try {
+    await promptStore.loadTemplates()
+    const prompt = promptStore.render('trace-analysis', {
+      uri: selectedUri.value,
+      projectPath: appStore.projectDir,
+      projectName: projectName.value
+    }) + `\n\n调用链入口: ${selectedUri.value}`
+
+    const sessionId = await claudeApi.universalChat(
+      {
+        prompt,
+        scene: 'trace-analysis',
+        metadata: {
+          projectName: projectName.value,
+          uri: selectedUri.value
+        }
+      },
+      {
+        onOutput: () => {},
+        onDone: () => {},
+        onError: (error) => {
+          ElMessage.error(`分析失败: ${error}`)
+        }
+      }
+    )
+
+    router.push({ name: 'ClaudeSession', query: { sessionId } })
+    ElMessage.success('已创建调用链分析会话')
+  } catch (error) {
+    ElMessage.error('创建分析会话失败')
+  } finally {
+    analysisLoading.value = false
   }
 }
 

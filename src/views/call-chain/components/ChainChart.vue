@@ -276,6 +276,7 @@ interface ChainNode {
   depth?: number
   method?: string
   package?: string
+  uri?: string
 }
 
 const props = defineProps<{

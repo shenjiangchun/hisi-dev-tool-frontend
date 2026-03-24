@@ -1,5 +1,5 @@
 import request from '@/utils/request'
-import type { UniversalChatRequest, StreamCallbacks } from '@/types/session'
+import type { UniversalChatRequest, StreamCallbacks as StreamCallbacksType } from '@/types/session'
 
 export interface AnalyzeLogRequest {
   /** 错误摘要（日志头+异常类型+消息） */
@@ -42,12 +42,7 @@ export interface ChatRequest {
 }
 
 // 流式分析回调 (兼容旧接口)
-export interface StreamCallbacks {
-  onSession?: (sessionId: string) => void
-  onOutput?: (line: string) => void
-  onDone?: (status: string) => void
-  onError?: (error: string) => void
-}
+export type StreamCallbacks = StreamCallbacksType
 
 export const claudeApi = {
   // 非流式分析（保留兼容）

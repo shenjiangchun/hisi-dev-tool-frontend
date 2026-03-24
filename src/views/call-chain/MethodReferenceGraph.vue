@@ -81,7 +81,6 @@ import { callChainApi } from '@/api/callChain'
 import { claudeApi } from '@/api/claude'
 import { useAppStore } from '@/stores/app'
 import { usePromptStore } from '@/stores/promptStore'
-import ClassMethodSelector from './components/ClassMethodSelector.vue'
 import ChainChart from './components/ChainChart.vue'
 import ContextMenu from './components/ContextMenu.vue'
 
@@ -118,11 +117,6 @@ const contextMenuVisible = ref(false)
 const contextMenuX = ref(0)
 const contextMenuY = ref(0)
 const contextMenuNode = ref<ChainNode | null>(null)
-
-const handleSelectionChange = (value: Selection | null) => {
-  selection.value = value
-  chainData.value = null
-}
 
 // Add method to entry list
 const addMethod = () => {

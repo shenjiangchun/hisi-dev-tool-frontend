@@ -290,7 +290,7 @@ echo "[4/6] 安装 npm 依赖..."
 echo "       这可能需要几分钟，请耐心等待..."
 echo ""
 npm install --registry=https://registry.npmmirror.com 2>&1 | tee -a "$LOG_FILE"
-if [ ${PIPESTATUS[0]} -ne 0 ]; then
+if [ \${PIPESTATUS[0]} -ne 0 ]; then
     echo ""
     echo " [错误] npm install 失败"
     echo "        请检查网络连接或尝试手动执行: npm install"
@@ -305,7 +305,7 @@ echo "       依赖安装完成"
 echo ""
 echo "[5/6] 构建 MCP Server..."
 npm run build 2>&1 | tee -a "$LOG_FILE"
-if [ ${PIPESTATUS[0]} -ne 0 ]; then
+if [ \${PIPESTATUS[0]} -ne 0 ]; then
     echo ""
     echo " [错误] npm run build 失败"
     echo "        请检查是否有 TypeScript 编译错误"
@@ -371,107 +371,6 @@ echo "安装日志已保存到: $LOG_FILE"
 echo ""
 echo "========================================================"
 `
-  }
-})
-  } else {
-    return `#!/bin/bash
-
-echo ""
-echo "╔══════════════════════════════════════════════════════════╗"
-echo "║       HiSi DevTool MCP 一键安装脚本                      ║"
-echo "╚══════════════════════════════════════════════════════════╝"
-echo ""
-
-# 检查 Node.js
-if ! command -v node &> /dev/null; then
-    echo "[✗] 未找到 Node.js，请先安装 Node.js 18+"
-    echo "    下载地址: https://nodejs.org/"
-    exit 1
-fi
-echo "[✓] Node.js 已安装: $(node -v)"
-
-# 设置路径
-MCP_DIR="$HOME/projects/hisi-dev-tool-mcp"
-CLAUDE_CONFIG="$HOME/Library/Application Support/Claude/claude_desktop_config.json"
-SKILLS_DIR="$HOME/.claude/skills"
-
-# 创建目录
-mkdir -p "$HOME/projects"
-mkdir -p "$SKILLS_DIR"
-
-# 检查 MCP 目录
-if [ -d "$MCP_DIR" ]; then
-    echo "[!] MCP 目录已存在: $MCP_DIR"
-    cd "$MCP_DIR"
-else
-    echo "[i] 请将此脚本放在 hisi-dev-tool-mcp 目录中运行"
-    echo "    或手动下载 MCP 包后重试"
-    exit 1
-fi
-
-# 安装依赖
-echo ""
-echo "[*] 正在安装依赖..."
-npm install --registry=https://registry.npmmirror.com || { echo "[✗] 安装依赖失败"; exit 1; }
-echo "[✓] 依赖安装完成"
-
-# 构建
-echo ""
-echo "[*] 正在构建 MCP Server..."
-npm run build || { echo "[✗] 构建失败"; exit 1; }
-echo "[✓] 构建完成"
-
-# 安装 Skills
-echo ""
-echo "[*] 正在安装 Skills..."
-if [ -d "skills" ]; then
-    cp -r skills/* "$SKILLS_DIR/"
-    echo "[✓] Skills 已安装到: $SKILLS_DIR"
-else
-    echo "[!] 未找到 skills 目录，跳过"
-fi
-
-# 配置 Claude Desktop
-echo ""
-echo "[*] 正在配置 Claude Desktop..."
-mkdir -p "$(dirname "$CLAUDE_CONFIG")"
-
-MCP_PATH="$MCP_DIR/dist/index.js"
-CONFIG_CONTENT=$(cat <<EOF
-{
-  "mcpServers": {
-    "hisi-dev-tool": {
-      "command": "node",
-      "args": ["$MCP_PATH"],
-      "env": {
-        "HISI_API_URL": "http://localhost:8080/api/callchain",
-        "HISI_LOG_API_URL": "http://localhost:8080/api/log"
-      }
-    }
-  }
-}
-EOF
-)
-
-if [ -f "$CLAUDE_CONFIG" ]; then
-    echo "[!] 配置文件已存在，请手动添加以下配置:"
-    echo ""
-    echo "$CONFIG_CONTENT"
-    echo ""
-else
-    echo "$CONFIG_CONTENT" > "$CLAUDE_CONFIG"
-    echo "[✓] 配置文件已创建: $CLAUDE_CONFIG"
-fi
-
-echo ""
-echo "╔══════════════════════════════════════════════════════════╗"
-echo "║                    安装完成!                             ║"
-echo "╠══════════════════════════════════════════════════════════╣"
-echo "║  1. 重启 Claude Desktop                                  ║"
-echo "║  2. 确保 hisi-dev-tool 后端服务正在运行                  ║"
-echo "║  3. 在 Claude 中测试: \"帮我分析调用链\"                   ║"
-echo "╚══════════════════════════════════════════════════════════╝"
-echo ""`
   }
 })
 

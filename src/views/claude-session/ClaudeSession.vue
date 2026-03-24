@@ -18,6 +18,15 @@
             clearable
             size="small"
           />
+          <el-button
+            type="primary"
+            size="small"
+            style="margin-top: 8px; width: 100%;"
+            @click="handleNewSession"
+          >
+            <el-icon><Plus /></el-icon>
+            新建会话
+          </el-button>
         </div>
 
         <div class="session-groups">
@@ -133,7 +142,7 @@
 
       <!-- 空状态 -->
       <div v-else class="empty-state">
-        <el-empty description="选择一个会话或从日志分析开始" />
+        <el-empty description="选择一个会话或点击左侧「新建会话」开始" />
       </div>
     </div>
   </div>
@@ -141,17 +150,22 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Folder, FolderOpened, Edit, DArrowLeft, DArrowRight } from '@element-plus/icons-vue'
+import { Folder, FolderOpened, Edit, Plus } from '@element-plus/icons-vue'
 import { useSessionStore } from '@/stores/sessionStore'
 import { claudeApi } from '@/api/claude'
-import type { Session, SceneType } from '@/types/session'
+import { useAppStore } from '@/stores/app'
+import { usePromptStore } from '@/stores/promptStore'
+import type { Session } from '@/types/session'
 import { SCENE_NAMES } from '@/types/session'
 
 const route = useRoute()
-const router = useRouter()
 const sessionStore = useSessionStore()
+const appStore = useAppStore()
+const promptStore = usePromptStore()
+
+const projectName = computed(() => appStore.selectedProject || '')
 
 // 状态
 const listCollapsed = ref(false)
@@ -224,7 +238,7 @@ async function sendMessage() {
   streamingContent.value = ''
 
   try {
-    const sessionId = await claudeApi.universalChat(
+    await claudeApi.universalChat(
       {
         sessionId: sessionStore.currentSessionId,
         prompt: message
@@ -311,6 +325,46 @@ async function handleDelete() {
     await sessionStore.deleteSession(sessionStore.currentSessionId)
     ElMessage.success('删除成功')
   } catch {}
+}
+
+// Handle new session creation
+async function handleNewSession() {
+  if (!appStore.projectSelected) {
+    ElMessage.warning('请先选择一个项目')
+    return
+  }
+
+  try {
+    await promptStore.loadTemplates()
+    const prompt = promptStore.render('free-chat', {
+      projectName: projectName.value,
+      projectPath: appStore.projectDir
+    }) || `你好，我正在分析项目 ${projectName.value}，请问我有什么可以帮助你的？`
+
+    const sessionId = await claudeApi.universalChat(
+      {
+        prompt,
+        scene: 'free-chat',
+        metadata: {
+          projectName: projectName.value
+        }
+      },
+      {
+        onOutput: () => {},
+        onDone: () => {},
+        onError: (error) => {
+          ElMessage.error(`创建会话失败: ${error}`)
+        }
+      }
+    )
+
+    // Refresh session list and select the new session
+    await sessionStore.loadSessions()
+    sessionStore.setCurrentSession(sessionId)
+    ElMessage.success('已创建新会话')
+  } catch (error) {
+    ElMessage.error('创建会话失败')
+  }
 }
 
 // 监听路由参数

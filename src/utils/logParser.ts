@@ -291,7 +291,7 @@ export function getCompactStackTrace(frames: StackFrame[], maxFrames: number = 1
 
   const selectedFrames = projectFrames.length > 0 ? projectFrames : frames
 
-  return selectedFrames.slice(0, maxFrames).map((frame, index) =>
+  return selectedFrames.slice(0, maxFrames).map((frame) =>
     `${frame.className}.${frame.methodName}(${frame.fileName}:${frame.lineNumber || 'N/A'})`
   ).join('\n')
 }
