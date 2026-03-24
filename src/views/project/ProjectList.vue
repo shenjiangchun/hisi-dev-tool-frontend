@@ -35,6 +35,15 @@
           <span>项目管理</span>
           <div class="header-buttons">
             <el-button
+              type="warning"
+              @click="handleUpdateAll"
+              :loading="updatingAll"
+              :disabled="!appStore.projectDirConfigured"
+            >
+              <el-icon><Refresh /></el-icon>
+              一键更新所有仓库
+            </el-button>
+            <el-button
               type="success"
               @click="handleScan"
               :loading="scanning"
@@ -97,7 +106,7 @@
             <span v-else class="text-muted">-</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="280">
+        <el-table-column label="操作" width="380">
           <template #default="{ row }">
             <el-button
               type="primary"
@@ -107,6 +116,15 @@
             >
               <el-icon><Select /></el-icon>
               选择
+            </el-button>
+            <el-button
+              type="info"
+              link
+              @click="showCommitDialog(row)"
+              :disabled="!appStore.projectDirConfigured"
+            >
+              <el-icon><Document /></el-icon>
+              提交分析
             </el-button>
             <el-button
               type="warning"
@@ -147,28 +165,122 @@
         <el-button type="primary" @click="handleClone" :loading="cloning">克隆</el-button>
       </template>
     </el-dialog>
+
+    <!-- Commit Analysis Dialog -->
+    <el-dialog v-model="commitDialogVisible" title="提交代码分析" width="800px">
+      <div v-if="commitsLoading" class="loading-container">
+        <el-icon class="is-loading"><Loading /></el-icon>
+        <span>加载提交列表...</span>
+      </div>
+      <div v-else>
+        <div class="commit-header">
+          <span>项目: {{ selectedProjectForCommit }}</span>
+          <el-button type="primary" size="small" @click="loadCommits">刷新</el-button>
+        </div>
+        <el-table
+          :data="commits"
+          @selection-change="handleCommitSelection"
+          max-height="400"
+          v-loading="analysisLoading"
+        >
+          <el-table-column type="selection" width="55" />
+          <el-table-column prop="commitId" label="Commit" width="100" />
+          <el-table-column prop="shortMessage" label="提交信息" show-overflow-tooltip />
+          <el-table-column prop="author" label="作者" width="120" />
+          <el-table-column prop="date" label="时间" width="160">
+            <template #default="{ row }">
+              {{ formatDate(row.date) }}
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+      <template #footer>
+        <el-button @click="commitDialogVisible = false">取消</el-button>
+        <el-button
+          type="warning"
+          @click="handleImpactAnalysis"
+          :disabled="selectedCommits.length === 0"
+          :loading="analysisLoading"
+        >
+          影响分析
+        </el-button>
+        <el-button
+          type="primary"
+          @click="handleCodeAnalysis"
+          :disabled="selectedCommits.length === 0"
+          :loading="analysisLoading"
+        >
+          提交代码分析
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- Update All Result Dialog -->
+    <el-dialog v-model="updateResultVisible" title="一键更新结果" width="600px">
+      <div class="update-result">
+        <el-descriptions :column="3" border>
+          <el-descriptions-item label="总仓库数">{{ updateResult?.totalRepos || 0 }}</el-descriptions-item>
+          <el-descriptions-item label="成功">{{ updateResult?.successCount || 0 }}</el-descriptions-item>
+          <el-descriptions-item label="失败">{{ updateResult?.failCount || 0 }}</el-descriptions-item>
+        </el-descriptions>
+        <el-table :data="updateResult?.results || []" max-height="300" class="mt-4">
+          <el-table-column prop="path" label="仓库路径" show-overflow-tooltip />
+          <el-table-column prop="branch" label="分支" width="100" />
+          <el-table-column label="状态" width="80">
+            <template #default="{ row }">
+              <el-tag :type="row.success ? 'success' : 'danger'">
+                {{ row.success ? '成功' : '失败' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="message" label="消息" show-overflow-tooltip />
+        </el-table>
+      </div>
+      <template #footer>
+        <el-button type="primary" @click="updateResultVisible = false">确定</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, onMounted, onUnmounted } from 'vue'
-import { Plus, Select, FolderOpened, Connection } from '@element-plus/icons-vue'
+import { useRouter } from 'vue-router'
+import { Plus, Select, FolderOpened, Connection, Document, Refresh, Loading } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { projectApi } from '@/api/project'
 import { taskApi } from '@/api/task'
+import { gitApi, type GitCommit, type UpdateAllResponse } from '@/api/git'
+import { claudeApi } from '@/api/claude'
+import { usePromptStore } from '@/stores/promptStore'
 import type { CallChainTask } from '@/types/callchain'
 import { useAppStore } from '@/stores/app'
 import ProjectDirConfig from '@/components/ProjectDirConfig.vue'
 import GitOperations from '@/components/GitOperations.vue'
 import type { GitRepositoryInfo } from '@/types/callchain'
 
+const router = useRouter()
 const appStore = useAppStore()
+const promptStore = usePromptStore()
 
 const loading = ref(false)
 const cloning = ref(false)
 const scanning = ref(false)
+const updatingAll = ref(false)
 const showCloneDialog = ref(false)
 const projects = ref<GitRepositoryInfo[]>([])
+
+// Commit analysis state
+const commitDialogVisible = ref(false)
+const commitsLoading = ref(false)
+const analysisLoading = ref(false)
+const selectedProjectForCommit = ref('')
+const commits = ref<GitCommit[]>([])
+const selectedCommits = ref<GitCommit[]>([])
+
+// Update all result
+const updateResultVisible = ref(false)
+const updateResult = ref<UpdateAllResponse | null>(null)
 
 const cloneForm = reactive({
   url: '',
@@ -492,6 +604,152 @@ const handleDelete = (row: GitRepositoryInfo) => {
   }).catch(() => {})
 }
 
+// Show commit dialog
+const showCommitDialog = (row: GitRepositoryInfo) => {
+  selectedProjectForCommit.value = row.name
+  commitDialogVisible.value = true
+  loadCommits()
+}
+
+// Load commits
+const loadCommits = async () => {
+  commitsLoading.value = true
+  try {
+    const path = getProjectPath(selectedProjectForCommit.value)
+    const res = await gitApi.getCommits(path, 50)
+    commits.value = res.data || []
+  } catch (error) {
+    ElMessage.error('加载提交列表失败')
+  } finally {
+    commitsLoading.value = false
+  }
+}
+
+// Handle commit selection
+const handleCommitSelection = (selection: GitCommit[]) => {
+  selectedCommits.value = selection
+}
+
+// Format date
+const formatDate = (dateStr: string) => {
+  if (!dateStr) return '-'
+  return new Date(dateStr).toLocaleString('zh-CN')
+}
+
+// Handle code analysis
+const handleCodeAnalysis = async () => {
+  if (selectedCommits.value.length === 0) return
+
+  analysisLoading.value = true
+  try {
+    // Build prompt with commit info
+    const commitInfos = selectedCommits.value.map(c =>
+      `${c.commitId}: ${c.shortMessage} (${c.author})`
+    ).join('\n')
+
+    await promptStore.loadTemplates()
+    const prompt = promptStore.render('code-analysis', {
+      codeSnippet: `以下是需要分析的 Git 提交:\n\n${commitInfos}`,
+      language: 'Java',
+      projectContext: `项目: ${selectedProjectForCommit.value}`
+    })
+
+    const sessionId = await claudeApi.universalChat(
+      {
+        prompt,
+        scene: 'code-analysis',
+        metadata: {
+          projectName: selectedProjectForCommit.value,
+          commits: selectedCommits.value.map(c => c.commitId)
+        }
+      },
+      {
+        onOutput: () => {},
+        onDone: () => {},
+        onError: (error) => {
+          ElMessage.error(`分析失败: ${error}`)
+        }
+      }
+    )
+
+    commitDialogVisible.value = false
+    router.push({ name: 'ClaudeSession', query: { sessionId } })
+    ElMessage.success('已创建代码分析会话')
+  } catch (error) {
+    ElMessage.error('创建分析会话失败')
+  } finally {
+    analysisLoading.value = false
+  }
+}
+
+// Handle impact analysis
+const handleImpactAnalysis = async () => {
+  if (selectedCommits.value.length === 0) return
+
+  analysisLoading.value = true
+  try {
+    const commitInfos = selectedCommits.value.map(c =>
+      `${c.commitId}: ${c.shortMessage}`
+    ).join('\n')
+
+    await promptStore.loadTemplates()
+    const prompt = promptStore.render('impact-analysis', {
+      changedFile: '多个文件变更',
+      changedMethod: '多个方法变更',
+      changeType: 'MODIFY',
+      projectName: selectedProjectForCommit.value
+    }) + `\n\n提交信息:\n${commitInfos}`
+
+    const sessionId = await claudeApi.universalChat(
+      {
+        prompt,
+        scene: 'impact-analysis',
+        metadata: {
+          projectName: selectedProjectForCommit.value,
+          commits: selectedCommits.value.map(c => c.commitId)
+        }
+      },
+      {
+        onOutput: () => {},
+        onDone: () => {},
+        onError: (error) => {
+          ElMessage.error(`分析失败: ${error}`)
+        }
+      }
+    )
+
+    commitDialogVisible.value = false
+    router.push({ name: 'ClaudeSession', query: { sessionId } })
+    ElMessage.success('已创建影响分析会话')
+  } catch (error) {
+    ElMessage.error('创建分析会话失败')
+  } finally {
+    analysisLoading.value = false
+  }
+}
+
+// Handle update all
+const handleUpdateAll = async () => {
+  if (!appStore.projectDirConfigured) {
+    ElMessage.warning('请先配置项目目录')
+    return
+  }
+
+  updatingAll.value = true
+  try {
+    const res = await gitApi.updateAll(appStore.projectDir)
+    updateResult.value = res.data
+    updateResultVisible.value = true
+
+    // Refresh project list
+    await handleScan()
+  } catch (error) {
+    ElMessage.error('一键更新失败')
+  } finally {
+    updatingAll.value = false
+  }
+}
+
 onMounted(() => {
   if (appStore.projectDirConfigured) {
     handleScan()
@@ -582,5 +840,32 @@ onUnmounted(() => {
 .status-text {
   font-size: 12px;
   color: #606266;
+}
+
+/* Commit dialog styles */
+.commit-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  font-weight: 500;
+}
+
+.loading-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 40px;
+  color: #909399;
+}
+
+/* Update result styles */
+.update-result {
+  margin-top: 16px;
+}
+
+.mt-4 {
+  margin-top: 16px;
 }
 </style>
