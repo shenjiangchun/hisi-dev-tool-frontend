@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { Document, Share, Folder, Cpu } from '@element-plus/icons-vue'
+import { Document, Share, Folder, Cpu, ChatDotRound, Setting } from '@element-plus/icons-vue'
 import { useRoute } from 'vue-router'
 import { computed } from 'vue'
 import type { Component } from 'vue'
 import { useAppStore } from '@/stores/app'
 
 // Define menu key type that matches availableMenus keys
-type MenuKey = 'call-chain' | 'log-analysis' | 'ops' | 'project-management' | 'mcp-guide'
+type MenuKey = 'call-chain' | 'log-analysis' | 'ops' | 'project-management' | 'mcp-guide' | 'claude-session' | 'prompt-config'
 
 interface MenuItem {
   index: string
@@ -31,6 +31,18 @@ const baseMenuItems: MenuItem[] = [
     title: '日志分析',
     icon: Document,
     menuKey: 'log-analysis'
+  },
+  {
+    index: '/claude-session',
+    title: 'Claude 会话',
+    icon: ChatDotRound,
+    menuKey: 'claude-session'
+  },
+  {
+    index: '/prompt-config',
+    title: '提示词配置',
+    icon: Setting,
+    menuKey: 'prompt-config'
   },
   {
     index: '/call-chain',
