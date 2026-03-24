@@ -39,5 +39,36 @@ export const callChainApi = {
   // 获取下游调用链（此方法调用了谁）
   getCallees(params: { method: string; maxDepth?: number; project?: string }) {
     return request.get('/callchain/callees', { params })
+  },
+
+  // 获取多方法依赖图
+  getMethodGraph(params: {
+    methods: string[]
+    direction: 'upstream' | 'downstream'
+    maxDepth?: number
+    projectDir?: string
+  }) {
+    return request.post('/callchain/method-graph', params)
+  },
+
+  // 调用链分析
+  analyzeCallChain(params: {
+    projectName: string
+    uri: string
+    projectDir?: string
+  }) {
+    return request.post('/callchain/analyze', params, {
+      headers: { Accept: 'text/event-stream' }
+    })
+  },
+
+  // 获取分析结果列表
+  getAnalysisList(projectName: string) {
+    return request.get('/callchain/analysis', { params: { projectName } })
+  },
+
+  // 删除项目的所有分析结果
+  deleteProjectAnalysis(projectName: string) {
+    return request.delete(`/callchain/analysis/project/${projectName}`)
   }
 }
