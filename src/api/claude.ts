@@ -196,6 +196,7 @@ export const claudeApi = {
     return new Promise((resolve, reject) => {
       let sessionId = data.sessionId || ''
       let buffer = ''
+      let currentEventType = ''
 
       fetch('/api/claude/universal-chat', {
         method: 'POST',
@@ -231,11 +232,24 @@ export const claudeApi = {
               buffer = lines.pop() || ''
 
               for (const line of lines) {
-                if (line.startsWith('event:session')) {
-                  // 下一行是 session 数据
+                if (line.startsWith('event:')) {
+                  currentEventType = line.slice(6).trim()
                 } else if (line.startsWith('data:')) {
                   const content = line.slice(5).trim()
-                  callbacks.onOutput?.(content)
+
+                  if (currentEventType === 'session') {
+                    // 收到 session ID
+                    sessionId = content
+                    callbacks.onSession?.(content)
+                  } else if (currentEventType === 'done') {
+                    callbacks.onDone?.(content)
+                  } else if (currentEventType === 'error') {
+                    callbacks.onError?.(content)
+                  } else {
+                    // 默认是 output 事件
+                    callbacks.onOutput?.(content)
+                  }
+                  currentEventType = ''
                 }
               }
 

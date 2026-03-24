@@ -341,7 +341,9 @@ async function handleNewSession() {
       projectPath: appStore.projectDir
     }) || `你好，我正在分析项目 ${projectName.value}，请问我有什么可以帮助你的？`
 
-    const sessionId = await claudeApi.universalChat(
+    let newSessionId = ''
+
+    await claudeApi.universalChat(
       {
         prompt,
         scene: 'free-chat',
@@ -350,6 +352,13 @@ async function handleNewSession() {
         }
       },
       {
+        onSession: async (sessionId) => {
+          // 收到 sessionId 后立即刷新列表并切换
+          newSessionId = sessionId
+          await sessionStore.loadSessions()
+          sessionStore.setCurrentSession(sessionId)
+          ElMessage.success('已创建新会话')
+        },
         onOutput: () => {},
         onDone: () => {},
         onError: (error) => {
@@ -358,10 +367,10 @@ async function handleNewSession() {
       }
     )
 
-    // Refresh session list and select the new session
-    await sessionStore.loadSessions()
-    sessionStore.setCurrentSession(sessionId)
-    ElMessage.success('已创建新会话')
+    // 如果 onSession 没被调用，兜底处理
+    if (!newSessionId) {
+      await sessionStore.loadSessions()
+    }
   } catch (error) {
     ElMessage.error('创建会话失败')
   }
