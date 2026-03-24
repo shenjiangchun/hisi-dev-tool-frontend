@@ -1103,21 +1103,6 @@ const handleAnalyze = async (row: MockLogEntry) => {
     ElMessage.error('创建分析会话失败')
   }
 }
-        },
-        onError: (error) => {
-          analysisLoading.value = false
-          analysisError.value = error
-          ElMessage.error(`分析失败: ${error}`)
-        }
-      }
-    )
-  } catch (error: any) {
-    analysisLoading.value = false
-    analysisError.value = error.message || '分析过程中发生错误'
-    ElMessage.error(`分析失败: ${analysisError.value}`)
-    console.error('Analysis failed:', error)
-  }
-}
 
 // 发送聊天消息
 const sendChat = async () => {
