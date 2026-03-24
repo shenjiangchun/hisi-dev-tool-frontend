@@ -463,12 +463,17 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, nextTick } from 'vue'
+import { useRouter } from 'vue-router'
 import { Search, Loading, Document, Warning, Cpu, Check, Delete, Plus } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { logAnalysisApi } from '@/api/logAnalysis'
 import { claudeApi } from '@/api/claude'
+import { usePromptStore } from '@/stores/promptStore'
 import type { LogEntry } from '@/types/log'
 import { parseJavaErrorLog, formatForAnalysis, type ParsedErrorLog } from '@/utils/logParser'
+
+const router = useRouter()
+const promptStore = usePromptStore()
 
 const loading = ref(false)
 const logs = ref<LogEntry[]>([])
@@ -1042,56 +1047,62 @@ const showDetail = (row: LogEntry) => {
 }
 
 const handleAnalyze = async (row: MockLogEntry) => {
-  // Reset state
-  analyzingLog.value = row as any
-  analysisError.value = null
-  streamOutput.value = ''
-  currentSessionId.value = ''
-  chatInput.value = ''
-  analysisVisible.value = true
-  analysisLoading.value = true
+  // 解析日志，区分错误信息和堆栈信息
+  const rawLog = row.message || row.stackTrace || ''
+  const parsed = parseJavaErrorLog(rawLog)
+  const formatted = formatForAnalysis(parsed)
 
+  console.log('解析后的日志结构:', {
+    errorType: formatted.errorType,
+    errorMessage: formatted.errorMessage,
+    stackFramesCount: parsed.stackFrames.length,
+    causedByCount: parsed.causedByChain.length
+  })
+
+  // 获取提示词模板并渲染
+  await promptStore.loadTemplates()
+  const prompt = promptStore.render('log-analysis', {
+    errorMessage: formatted.errorSummary || formatted.errorMessage || rawLog,
+    errorType: formatted.errorType || '',
+    stackTrace: formatted.stackTrace || parsed.rawStackTrace || '',
+    projectPath: row.serviceName || parsed.loggerName || ''
+  })
+
+  // 使用通用对话接口创建会话并跳转
   try {
-    // 解析日志，区分错误信息和堆栈信息
-    const rawLog = row.message || row.stackTrace || ''
-    const parsed = parseJavaErrorLog(rawLog)
-    const formatted = formatForAnalysis(parsed)
-
-    console.log('解析后的日志结构:', {
-      errorType: formatted.errorType,
-      errorMessage: formatted.errorMessage,
-      stackFramesCount: parsed.stackFrames.length,
-      causedByCount: parsed.causedByChain.length
-    })
-
-    // 使用流式 API，传递结构化的分析参数
-    abortController.value = claudeApi.streamAnalyze(
+    const sessionId = await claudeApi.universalChat(
       {
-        errorMessage: formatted.errorSummary || formatted.errorMessage || rawLog,
-        errorType: formatted.errorType || undefined,
-        errorMessageDetail: formatted.errorMessage || undefined,
-        stackTrace: formatted.stackTrace || parsed.rawStackTrace || undefined,
-        causedBy: formatted.causedBy || undefined,
-        projectPath: row.serviceName || parsed.loggerName || undefined
+        prompt,
+        scene: 'log-analysis',
+        metadata: {
+          sourceId: row.id,
+          errorType: formatted.errorType,
+          serviceName: row.serviceName
+        }
       },
       {
-        onSession: (sessionId) => {
-          currentSessionId.value = sessionId
-        },
-        onOutput: (line) => {
-          streamOutput.value += line + '\n'
-          // 自动滚动到底部
-          nextTick(() => {
-            if (streamOutputRef.value) {
-              streamOutputRef.value.scrollTop = streamOutputRef.value.scrollHeight
-            }
-          })
+        onOutput: (content) => {
+          // 流式输出处理
+          console.log('Claude output:', content)
         },
         onDone: (status) => {
-          analysisLoading.value = false
-          if (status === 'completed') {
-            ElMessage.success('分析完成')
-          }
+          console.log('Analysis done:', status)
+        },
+        onError: (error) => {
+          console.error('Analysis error:', error)
+          ElMessage.error(`分析失败: ${error}`)
+        }
+      }
+    )
+
+    // 跳转到 Claude 会话页面
+    router.push({ name: 'ClaudeSession', query: { sessionId } })
+    ElMessage.success('已创建分析会话')
+  } catch (error) {
+    console.error('创建会话失败:', error)
+    ElMessage.error('创建分析会话失败')
+  }
+}
         },
         onError: (error) => {
           analysisLoading.value = false
