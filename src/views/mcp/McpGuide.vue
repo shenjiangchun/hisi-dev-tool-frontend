@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { Download, Check, Loading, Cpu, FolderOpened, SuccessFilled, WarningFilled, CircleCloseFilled, Monitor, Cpu as Terminal } from '@element-plus/icons-vue'
+import { Download, Check, Loading, Cpu, FolderOpened, SuccessFilled, WarningFilled, CircleCloseFilled, Monitor, Cpu as Terminal, CopyDocument } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { mcpApi, type McpStatus } from '@/api/mcp'
 
@@ -189,14 +189,123 @@ async function downloadMCP() {
   }
 }
 
-// MCP 工具列表
+// MCP 工具列表（含参数和示例）
 const tools = [
-  { name: 'find_callers', desc: '向上查找调用方' },
-  { name: 'find_callees', desc: '向下查找依赖' },
-  { name: 'search_methods', desc: '搜索方法' },
-  { name: 'list_projects', desc: '列出项目' },
-  { name: 'list_uris', desc: '列出 URI' },
-  { name: 'query_error_logs', desc: '查询错误日志' },
+  {
+    name: 'find_callers',
+    desc: '向上查找调用方',
+    params: [
+      { name: 'method', type: 'string', required: true, desc: '方法签名，支持完整签名、类.方法、仅方法名' },
+      { name: 'project_dir', type: 'string', required: true, desc: '项目目录路径' },
+    ],
+    example: '帮我查找 HisiURIMethodChainToDBServiceImpl.chainGenerator 方法被哪些 URI 入口调用',
+  },
+  {
+    name: 'find_callees',
+    desc: '向下查找依赖',
+    params: [
+      { name: 'method', type: 'string', required: true, desc: '方法签名' },
+      { name: 'project_dir', type: 'string', required: true, desc: '项目目录路径' },
+      { name: 'max_depth', type: 'number', required: false, desc: '最大递归深度，默认10' },
+    ],
+    example: '分析 UserService.createUser 方法的下游依赖链',
+  },
+  {
+    name: 'search_methods',
+    desc: '搜索方法',
+    params: [
+      { name: 'keyword', type: 'string', required: true, desc: '搜索关键词' },
+      { name: 'project', type: 'string', required: false, desc: '项目名称' },
+    ],
+    example: '搜索项目中所有包含 "upload" 的方法',
+  },
+  {
+    name: 'list_projects',
+    desc: '列出项目',
+    params: [],
+    example: '列出所有已分析的项目',
+  },
+  {
+    name: 'list_uris',
+    desc: '列出 URI',
+    params: [
+      { name: 'project', type: 'string', required: true, desc: '项目名称' },
+    ],
+    example: '列出 hisi-dev-tool 项目的所有 URI 入口',
+  },
+  {
+    name: 'list_classes',
+    desc: '列出项目中的类',
+    params: [
+      { name: 'project', type: 'string', required: false, desc: '项目名称' },
+    ],
+    example: '列出项目中所有的类',
+  },
+  {
+    name: 'list_methods_in_class',
+    desc: '列出类中的方法',
+    params: [
+      { name: 'class_name', type: 'string', required: true, desc: '类名' },
+      { name: 'project', type: 'string', required: false, desc: '项目名称' },
+    ],
+    example: '列出 UserService 类中定义的所有方法',
+  },
+  {
+    name: 'get_call_chain',
+    desc: '获取 URI 调用链',
+    params: [
+      { name: 'uri', type: 'string', required: true, desc: 'URI 路径' },
+    ],
+    example: '获取 /api/users 接口的完整调用链',
+  },
+  {
+    name: 'query_error_logs',
+    desc: '查询错误日志',
+    params: [
+      { name: 'time_range', type: 'string', required: false, desc: '时间范围，如 now-15m、now-1h' },
+      { name: 'size', type: 'number', required: false, desc: '返回数量，默认20' },
+      { name: 'custom_dsl', type: 'string', required: false, desc: '自定义 DSL 查询' },
+    ],
+    example: '查询最近15分钟的错误日志',
+  },
+  {
+    name: 'query_logs',
+    desc: '查询日志',
+    params: [
+      { name: 'dsl_query', type: 'string', required: true, desc: 'DSL 查询语句（JSON 格式）' },
+      { name: 'keyword', type: 'string', required: false, desc: '关键词搜索' },
+      { name: 'size', type: 'number', required: false, desc: '返回数量，默认50' },
+    ],
+    example: '搜索包含 "NullPointerException" 的日志',
+  },
+  {
+    name: 'analyze_interface',
+    desc: '接口完整分析',
+    params: [
+      { name: 'uri', type: 'string', required: true, desc: '接口 URI 路径' },
+      { name: 'include_code', type: 'boolean', required: false, desc: '是否包含代码实现，默认 true' },
+      { name: 'max_depth', type: 'number', required: false, desc: '最大分析深度，默认10' },
+    ],
+    example: '分析 /api/projects 接口的完整实现逻辑',
+  },
+  {
+    name: 'generate_interface_doc',
+    desc: '生成接口文档',
+    params: [
+      { name: 'uri', type: 'string', required: true, desc: '接口 URI 路径' },
+      { name: 'doc_format', type: 'string', required: false, desc: '文档格式：markdown 或 html' },
+    ],
+    example: '为 /api/users 接口生成 Markdown 格式的文档',
+  },
+  {
+    name: 'check_code_standards',
+    desc: '代码规范检查',
+    params: [
+      { name: 'uri', type: 'string', required: true, desc: '接口 URI 路径' },
+      { name: 'check_types', type: 'array', required: false, desc: '检查类型：naming, exception, logging, complexity, duplication, security' },
+    ],
+    example: '检查 /api/users 接口的代码规范问题',
+  },
 ]
 </script>
 
@@ -481,14 +590,96 @@ const tools = [
       <!-- 可用工具 -->
       <el-card class="tools-card">
         <template #header>
-          <span>安装后可用工具</span>
-        </template>
-        <div class="tools-grid">
-          <div v-for="tool in tools" :key="tool.name" class="tool-item">
-            <code>{{ tool.name }}</code>
-            <span>{{ tool.desc }}</span>
+          <div class="card-header">
+            <span>安装后可用工具</span>
+            <el-tag type="info" size="small">点击展开查看参数和示例</el-tag>
           </div>
-        </div>
+        </template>
+
+        <el-collapse accordion>
+          <el-collapse-item v-for="tool in tools" :key="tool.name" :name="tool.name">
+            <template #title>
+              <div class="tool-title">
+                <code class="tool-name">{{ tool.name }}</code>
+                <span class="tool-desc">{{ tool.desc }}</span>
+                <el-tag v-if="tool.params.some((p: any) => p.required)" type="danger" size="small">需要参数</el-tag>
+              </div>
+            </template>
+
+            <!-- 参数说明 -->
+            <div v-if="tool.params.length > 0" class="tool-params">
+              <h5>参数说明</h5>
+              <el-table :data="tool.params" size="small" border>
+                <el-table-column prop="name" label="参数名" width="120">
+                  <template #default="{ row }">
+                    <code>{{ row.name }}</code>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="type" label="类型" width="80" />
+                <el-table-column label="必填" width="60" align="center">
+                  <template #default="{ row }">
+                    <el-tag :type="row.required ? 'danger' : 'info'" size="small">
+                      {{ row.required ? '是' : '否' }}
+                    </el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="desc" label="说明" />
+              </el-table>
+            </div>
+            <div v-else class="tool-params">
+              <el-tag type="success" size="small">无需参数</el-tag>
+            </div>
+
+            <!-- 示例提问 -->
+            <div class="tool-example">
+              <h5>示例提问</h5>
+              <div class="example-box">
+                <el-icon><Cpu /></el-icon>
+                <span>{{ tool.example }}</span>
+                <el-button size="small" text @click="copyText(tool.example)">
+                  <el-icon><CopyDocument /></el-icon>
+                </el-button>
+              </div>
+            </div>
+          </el-collapse-item>
+        </el-collapse>
+      </el-card>
+
+      <!-- 使用场景 -->
+      <el-card class="usage-card">
+        <template #header>
+          <span>常见使用场景</span>
+        </template>
+        <el-collapse>
+          <el-collapse-item title="场景一：技术方案设计时的影响分析" name="scenario1">
+            <p>在设计技术方案时，需要评估修改某个方法会影响哪些 API 接口：</p>
+            <div class="code-block">
+              <code>帮我查找 UserService.updateUser 方法被哪些 URI 入口调用，项目目录是 C:/Users/xxx/projects/my-project</code>
+            </div>
+            <p class="tip">这将返回所有调用该方法的 API 接口列表，帮助评估影响范围。</p>
+          </el-collapse-item>
+          <el-collapse-item title="场景二：问题定位时的调用链追踪" name="scenario2">
+            <p>遇到错误日志时，快速定位问题根源：</p>
+            <ol>
+              <li>首先查询错误日志：<code>查询最近15分钟的错误日志</code></li>
+              <li>然后根据日志中的方法名查找调用链：<code>查找 xxx 方法的上游 URI 入口</code></li>
+              <li>最后分析接口实现：<code>分析 /api/xxx 接口的完整实现逻辑</code></li>
+            </ol>
+          </el-collapse-item>
+          <el-collapse-item title="场景三：代码审查时的接口文档生成" name="scenario3">
+            <p>生成接口文档用于代码审查或交接：</p>
+            <div class="code-block">
+              <code>为 /api/projects 接口生成 Markdown 格式的文档</code>
+            </div>
+            <p class="tip">将自动生成包含调用流程、涉及方法等信息的结构化文档。</p>
+          </el-collapse-item>
+          <el-collapse-item title="场景四：代码规范检查" name="scenario4">
+            <p>检查接口代码是否符合规范：</p>
+            <div class="code-block">
+              <code>检查 /api/users 接口的代码规范问题，包括命名规范、异常处理、安全问题</code>
+            </div>
+          </el-collapse-item>
+        </el-collapse>
       </el-card>
 
       <!-- 常见问题 -->
@@ -811,6 +1002,82 @@ const tools = [
 .tool-item span {
   font-size: 12px;
   color: #909399;
+}
+
+.tool-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+
+.tool-title .tool-name {
+  color: #409EFF;
+  font-weight: 600;
+  background: rgba(64, 158, 255, 0.1);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.tool-title .tool-desc {
+  color: #606266;
+  flex: 1;
+}
+
+.tool-params {
+  margin-bottom: 16px;
+}
+
+.tool-params h5 {
+  margin: 0 0 8px 0;
+  color: #303133;
+  font-size: 13px;
+}
+
+.tool-example {
+  margin-top: 12px;
+}
+
+.tool-example h5 {
+  margin: 0 0 8px 0;
+  color: #303133;
+  font-size: 13px;
+}
+
+.example-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(135deg, #667eea20 0%, #764ba220 100%);
+  border: 1px solid #667eea40;
+  padding: 12px 16px;
+  border-radius: 8px;
+}
+
+.example-box span {
+  flex: 1;
+  font-size: 13px;
+  color: #303133;
+}
+
+.usage-card {
+  margin-bottom: 16px;
+}
+
+.usage-card .tip {
+  font-size: 12px;
+  color: #909399;
+  font-style: italic;
+  margin-top: 8px;
+}
+
+.usage-card ol {
+  padding-left: 20px;
+}
+
+.usage-card li {
+  margin-bottom: 8px;
+  line-height: 1.6;
 }
 
 .manual-config {
