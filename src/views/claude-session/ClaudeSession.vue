@@ -174,33 +174,24 @@ const expandedGroups = ref({ active: true, archived: false })
 const editingTitle = ref(false)
 const newTitle = ref('')
 const inputMessage = ref('')
-const streaming = ref(false)
-const streamingContent = ref('')
 const messageListRef = ref<HTMLElement | null>(null)
 
-// 监听全局流式状态
-watch(
-  () => sessionStore.isStreaming,
-  (isStreaming) => {
-    if (isStreaming && sessionStore.streamingSessionId === sessionStore.currentSessionId) {
-      streaming.value = true
-    } else {
-      streaming.value = false
-    }
-  },
-  { immediate: true }
-)
+// 计算当前会话的流式状态
+const streaming = computed(() => {
+  if (!sessionStore.currentSessionId) return false
+  return sessionStore.isSessionStreaming(sessionStore.currentSessionId)
+})
 
-// 监听全局流式内容
-watch(
-  () => sessionStore.streamingContent,
-  (content) => {
-    if (sessionStore.isStreaming && sessionStore.streamingSessionId === sessionStore.currentSessionId) {
-      streamingContent.value = content
-      scrollToBottom()
-    }
-  }
-)
+// 计算当前会话的流式内容
+const streamingContent = computed(() => {
+  if (!sessionStore.currentSessionId) return ''
+  return sessionStore.getStreamingContent(sessionStore.currentSessionId)
+})
+
+// 监听流式内容变化，自动滚动到底部
+watch(streamingContent, () => {
+  scrollToBottom()
+})
 
 // 计算属性
 const filteredActiveSessions = computed(() => {
@@ -224,8 +215,9 @@ function toggleGroup(group: 'active' | 'archived') {
   expandedGroups.value[group] = !expandedGroups.value[group]
 }
 
-function selectSession(sessionId: string) {
-  sessionStore.setCurrentSession(sessionId)
+async function selectSession(sessionId: string) {
+  // 使用 switchSession 来关闭当前会话并切换到新会话
+  await sessionStore.switchSession(sessionId)
 }
 
 function getDefaultTitle(session: Session): string {
@@ -260,8 +252,6 @@ async function sendMessage() {
   const currentSessionId = sessionStore.currentSessionId // 保存当前会话 ID
 
   inputMessage.value = ''
-  streaming.value = true
-  streamingContent.value = ''
 
   // 先添加用户消息
   sessionStore.addMessageToSession(currentSessionId, {
@@ -272,46 +262,43 @@ async function sendMessage() {
     createdAt: new Date().toISOString()
   })
 
-  // 设置正在流式传输的会话
+  // 设置正在流式传输的会话（会初始化该会话的流式状态）
   sessionStore.setStreamingSession(currentSessionId)
 
   try {
     await claudeApi.universalChat(
       {
         sessionId: currentSessionId,
-        prompt: message
+        prompt: message,
+        workingDirectory: appStore.projectDir  // 传递工作目录
       },
       {
         onOutput: (content) => {
-          // 只有当前会话才更新 UI
-          if (sessionStore.currentSessionId === currentSessionId) {
-            streamingContent.value += content
-            scrollToBottom()
-          }
+          // 追加流式内容到指定会话
+          sessionStore.appendStreamingContent(currentSessionId, content)
         },
         onDone: () => {
-          streaming.value = false
-          sessionStore.setStreamingSession(null)
+          // 获取该会话的流式内容
+          const fullContent = sessionStore.getStreamingContent(currentSessionId)
           // 添加助手消息到正确的会话
           sessionStore.addMessageToSession(currentSessionId, {
             id: Date.now() + 1,
             sessionId: currentSessionId,
             role: 'assistant',
-            content: streamingContent.value,
+            content: fullContent,
             createdAt: new Date().toISOString()
           })
-          streamingContent.value = ''
+          // 清除该会话的流式状态
+          sessionStore.clearStreamingContent(currentSessionId)
         },
         onError: (error) => {
-          streaming.value = false
-          sessionStore.setStreamingSession(null)
+          sessionStore.clearStreamingContent(currentSessionId)
           ElMessage.error(`发送失败: ${error}`)
         }
       }
     )
   } catch (error) {
-    streaming.value = false
-    sessionStore.setStreamingSession(null)
+    sessionStore.clearStreamingContent(currentSessionId)
     ElMessage.error('发送失败')
   }
 }
@@ -347,6 +334,8 @@ async function handleArchive() {
     await ElMessageBox.confirm('确定要归档此会话吗？', '提示', {
       type: 'warning'
     })
+    // 先关闭会话保存会话码
+    await sessionStore.closeSession(sessionStore.currentSessionId)
     await sessionStore.archiveSession(sessionStore.currentSessionId)
     ElMessage.success('归档成功')
   } catch {}
@@ -359,6 +348,8 @@ async function handleDelete() {
     await ElMessageBox.confirm('确定要删除此会话吗？此操作不可恢复。', '警告', {
       type: 'error'
     })
+    // 先关闭会话
+    await sessionStore.closeSession(sessionStore.currentSessionId)
     await sessionStore.deleteSession(sessionStore.currentSessionId)
     ElMessage.success('删除成功')
   } catch {}
@@ -386,19 +377,41 @@ async function handleNewSession() {
         scene: 'free-chat',
         metadata: {
           projectName: projectName.value
-        }
+        },
+        workingDirectory: appStore.projectDir  // 传递工作目录
       },
       {
         onSession: async (sessionId) => {
           // 收到 sessionId 后立即刷新列表并切换
           newSessionId = sessionId
+          // 设置流式状态
+          sessionStore.setStreamingSession(sessionId)
           await sessionStore.loadSessions()
           sessionStore.setCurrentSession(sessionId)
           ElMessage.success('已创建新会话')
         },
-        onOutput: () => {},
-        onDone: () => {},
+        onOutput: (content) => {
+          if (newSessionId) {
+            sessionStore.appendStreamingContent(newSessionId, content)
+          }
+        },
+        onDone: () => {
+          if (newSessionId) {
+            const fullContent = sessionStore.getStreamingContent(newSessionId)
+            sessionStore.addMessageToSession(newSessionId, {
+              id: Date.now(),
+              sessionId: newSessionId,
+              role: 'assistant',
+              content: fullContent,
+              createdAt: new Date().toISOString()
+            })
+            sessionStore.clearStreamingContent(newSessionId)
+          }
+        },
         onError: (error) => {
+          if (newSessionId) {
+            sessionStore.clearStreamingContent(newSessionId)
+          }
           ElMessage.error(`创建会话失败: ${error}`)
         }
       }

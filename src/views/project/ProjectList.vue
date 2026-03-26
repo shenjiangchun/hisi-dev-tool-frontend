@@ -644,6 +644,9 @@ const handleCodeAnalysis = async () => {
 
   analysisLoading.value = true
 
+  // 获取项目工作目录
+  const workingDirectory = getProjectPath(selectedProjectForCommit.value)
+
   // 先生成 sessionId 并立即跳转
   const sessionId = crypto.randomUUID()
   sessionStore.setStreamingSession(sessionId)
@@ -671,32 +674,32 @@ const handleCodeAnalysis = async () => {
         metadata: {
           projectName: selectedProjectForCommit.value,
           commits: selectedCommits.value.map(c => c.commitId)
-        }
+        },
+        workingDirectory  // 传递工作目录
       },
       {
         onSession: () => {
           // sessionId 已由前端生成，无需处理
         },
         onOutput: (content) => {
-          // 将输出追加到全局状态
-          sessionStore.appendStreamingContent(content)
+          // 追加流式内容到指定会话
+          sessionStore.appendStreamingContent(sessionId, content)
         },
         onDone: () => {
           // 流式完成，添加助手消息
-          if (sessionStore.streamingSessionId) {
-            sessionStore.addMessageToSession(sessionStore.streamingSessionId, {
-              id: Date.now(),
-              sessionId: sessionStore.streamingSessionId,
-              role: 'assistant',
-              content: sessionStore.streamingContent,
-              createdAt: new Date().toISOString()
-            })
-          }
-          sessionStore.clearStreamingContent()
+          const fullContent = sessionStore.getStreamingContent(sessionId)
+          sessionStore.addMessageToSession(sessionId, {
+            id: Date.now(),
+            sessionId: sessionId,
+            role: 'assistant',
+            content: fullContent,
+            createdAt: new Date().toISOString()
+          })
+          sessionStore.clearStreamingContent(sessionId)
           ElMessage.success('分析完成')
         },
         onError: (error) => {
-          sessionStore.clearStreamingContent()
+          sessionStore.clearStreamingContent(sessionId)
           ElMessage.error(`分析失败: ${error}`)
         }
       }
@@ -713,6 +716,9 @@ const handleImpactAnalysis = async () => {
   if (selectedCommits.value.length === 0) return
 
   analysisLoading.value = true
+
+  // 获取项目工作目录
+  const workingDirectory = getProjectPath(selectedProjectForCommit.value)
 
   // 先生成 sessionId 并立即跳转
   const sessionId = crypto.randomUUID()
@@ -741,32 +747,32 @@ const handleImpactAnalysis = async () => {
         metadata: {
           projectName: selectedProjectForCommit.value,
           commits: selectedCommits.value.map(c => c.commitId)
-        }
+        },
+        workingDirectory  // 传递工作目录
       },
       {
         onSession: () => {
           // sessionId 已由前端生成，无需处理
         },
         onOutput: (content) => {
-          // 将输出追加到全局状态
-          sessionStore.appendStreamingContent(content)
+          // 追加流式内容到指定会话
+          sessionStore.appendStreamingContent(sessionId, content)
         },
         onDone: () => {
           // 流式完成，添加助手消息
-          if (sessionStore.streamingSessionId) {
-            sessionStore.addMessageToSession(sessionStore.streamingSessionId, {
-              id: Date.now(),
-              sessionId: sessionStore.streamingSessionId,
-              role: 'assistant',
-              content: sessionStore.streamingContent,
-              createdAt: new Date().toISOString()
-            })
-          }
-          sessionStore.clearStreamingContent()
+          const fullContent = sessionStore.getStreamingContent(sessionId)
+          sessionStore.addMessageToSession(sessionId, {
+            id: Date.now(),
+            sessionId: sessionId,
+            role: 'assistant',
+            content: fullContent,
+            createdAt: new Date().toISOString()
+          })
+          sessionStore.clearStreamingContent(sessionId)
           ElMessage.success('分析完成')
         },
         onError: (error) => {
-          sessionStore.clearStreamingContent()
+          sessionStore.clearStreamingContent(sessionId)
           ElMessage.error(`分析失败: ${error}`)
         }
       }

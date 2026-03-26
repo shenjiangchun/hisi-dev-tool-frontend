@@ -24,6 +24,8 @@ export interface Session {
   scene: SceneType
   status: SessionStatus
   metadata: string | null
+  workingDirectory: string | null
+  claudeSessionCode: string | null
   createdAt: string
   updatedAt: string
 }
@@ -68,6 +70,7 @@ export interface UniversalChatRequest {
   prompt: string
   scene?: SceneType
   metadata?: Record<string, unknown>
+  workingDirectory?: string
 }
 
 /** 流式回调 */

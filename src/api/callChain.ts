@@ -31,17 +31,27 @@ export const callChainApi = {
     return request.get('/callchain/methods', { params })
   },
 
-  // 获取上游调用链（谁调用了此方法）
+  // 获取上游调用链（谁调用了此方法）- 支持逗号分隔的多个方法
+  getUpstream(params: { method: string; maxDepth?: number; projectDir?: string }) {
+    return request.get('/callchain/upstream', { params })
+  },
+
+  // 获取下游调用链（此方法调用了谁）- 支持逗号分隔的多个方法
+  getDownstream(params: { method: string; maxDepth?: number; projectDir?: string }) {
+    return request.get('/callchain/downstream', { params })
+  },
+
+  // 获取上游调用链（旧接口，保留兼容）
   getCallers(params: { method: string; maxDepth?: number; project?: string }) {
     return request.get('/callchain/callers', { params })
   },
 
-  // 获取下游调用链（此方法调用了谁）
+  // 获取下游调用链（旧接口，保留兼容）
   getCallees(params: { method: string; maxDepth?: number; project?: string }) {
     return request.get('/callchain/callees', { params })
   },
 
-  // 获取多方法依赖图
+  // 获取多方法依赖图（已废弃，请使用 getUpstream 或 getDownstream）
   getMethodGraph(params: {
     methods: string[]
     direction: 'upstream' | 'downstream'

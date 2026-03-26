@@ -177,10 +177,24 @@ export const claudeApi = {
   },
 
   /**
-   * 结束会话
+   * 结束会话（返回 Claude 会话码用于恢复）
    */
   endSession(sessionId: string) {
     return request.delete(`/claude/session/${sessionId}`)
+  },
+
+  /**
+   * 恢复会话
+   */
+  resumeSession(sessionId: string) {
+    return request.post(`/claude/session/${sessionId}/resume`)
+  },
+
+  /**
+   * 获取会话的 Claude 会话码
+   */
+  getSessionCode(sessionId: string) {
+    return request.get(`/claude/session/${sessionId}/code`)
   },
 
   /**

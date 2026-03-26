@@ -41,20 +41,50 @@
           :loading="loading"
           :disabled="entryMethods.length === 0"
         >
-          生成依赖图
+          查询
         </el-button>
         <el-button
+          v-if="analysisDirection === 'downstream' && chainData"
           type="success"
           @click="handleAIAnalysis"
           :loading="analysisLoading"
-          :disabled="!chainData"
         >
           <el-icon><ChatDotRound /></el-icon>
           AI 影响分析
         </el-button>
       </div>
 
+      <!-- 向上查询：展示接口 URI 列表 -->
+      <div v-if="analysisDirection === 'upstream' && upstreamUris.length > 0" class="uri-list-section">
+        <div class="section-header">
+          <el-icon><Link /></el-icon>
+          <span>关联接口 ({{ upstreamUris.length }})</span>
+        </div>
+        <el-table :data="upstreamUris" stripe style="width: 100%">
+          <el-table-column prop="uri" label="接口 URI" min-width="300">
+            <template #default="{ row }">
+              <el-link type="primary" @click="navigateToCallChain(row.uri)">
+                {{ row.uri }}
+              </el-link>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="120">
+            <template #default="{ row }">
+              <el-button size="small" @click="navigateToCallChain(row.uri)">
+                查看调用链
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+
+      <!-- 向上查询：无结果提示 -->
+      <el-empty v-if="analysisDirection === 'upstream' && upstreamUris.length === 0 && !loading && hasQueried"
+        description="未找到关联的接口 URI" />
+
+      <!-- 向下查询：展示依赖图 -->
       <ChainChart
+        v-if="analysisDirection === 'downstream'"
         :data="chainData"
         :loading="loading"
         @node-contextmenu="handleContextMenu"
@@ -76,7 +106,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ChatDotRound } from '@element-plus/icons-vue'
+import { ChatDotRound, Link } from '@element-plus/icons-vue'
 import { callChainApi } from '@/api/callChain'
 import { claudeApi } from '@/api/claude'
 import { useAppStore } from '@/stores/app'
@@ -89,6 +119,10 @@ interface ChainNode {
   className?: string
   methodSignature?: string
   children?: ChainNode[]
+}
+
+interface UpstreamUri {
+  uri: string
 }
 
 interface Selection {
@@ -106,6 +140,8 @@ const selection = ref<Selection | null>(null)
 const loading = ref(false)
 const analysisLoading = ref(false)
 const chainData = ref<ChainNode | null>(null)
+const upstreamUris = ref<UpstreamUri[]>([])
+const hasQueried = ref(false)
 
 // Multi-method input
 const methodInput = ref('')
@@ -137,20 +173,54 @@ const loadDependencyGraph = async () => {
   if (entryMethods.value.length === 0) return
 
   loading.value = true
+  hasQueried.value = true
+  upstreamUris.value = []
+  chainData.value = null
+
   try {
-    const res = await callChainApi.getMethodGraph({
-      methods: entryMethods.value,
-      direction: analysisDirection.value,
-      maxDepth: 5,
-      projectDir: appStore.projectDir
-    })
-    chainData.value = buildGraphData(res.data)
-    ElMessage.success('依赖图生成成功')
+    // 将多个方法用逗号连接
+    const methodsParam = entryMethods.value.join(',')
+
+    if (analysisDirection.value === 'upstream') {
+      // 向上查询：获取关联的接口 URI 列表
+      const res = await callChainApi.getUpstream({
+        method: methodsParam,
+        maxDepth: 5,
+        projectDir: appStore.projectDir
+      })
+      // 后端返回的数据格式可能是 [{uri: xxx}, {uri: xxx}] 或 [{rootUri: xxx}]
+      upstreamUris.value = (res.data || []).map((item: any) => ({
+        uri: item.uri || item.rootUri || item
+      })).filter((item: UpstreamUri) => item.uri)
+
+      if (upstreamUris.value.length > 0) {
+        ElMessage.success(`找到 ${upstreamUris.value.length} 个关联接口`)
+      } else {
+        ElMessage.info('未找到关联的接口 URI')
+      }
+    } else {
+      // 向下查询：获取依赖图
+      const res = await callChainApi.getDownstream({
+        method: methodsParam,
+        maxDepth: 5,
+        projectDir: appStore.projectDir
+      })
+      chainData.value = buildTreeData(res.data, 'downstream')
+      ElMessage.success('依赖图生成成功')
+    }
   } catch (error) {
-    ElMessage.error('生成依赖图失败')
+    ElMessage.error('查询失败')
   } finally {
     loading.value = false
   }
+}
+
+// 导航到调用链页面
+const navigateToCallChain = (uri: string) => {
+  router.push({
+    path: '/call-chain/chain',
+    query: { uri, project: projectName.value }
+  })
 }
 
 const loadUpstream = async () => {
@@ -163,7 +233,9 @@ const loadUpstream = async () => {
       maxDepth: 5,
       project: projectName.value
     })
-    chainData.value = buildTreeData(res.data, 'upstream')
+    upstreamUris.value = (res.data || []).map((item: any) => ({
+      uri: item.uri || item.rootUri || item
+    })).filter((item: UpstreamUri) => item.uri)
   } catch (error) {
     ElMessage.error('加载上游调用链失败')
   } finally {
@@ -189,66 +261,64 @@ const loadDownstream = async () => {
   }
 }
 
-const buildTreeData = (data: any[], _direction: 'upstream' | 'downstream'): ChainNode => {
-  // 构建树形数据结构
+const buildTreeData = (data: any[], direction: 'upstream' | 'downstream'): ChainNode => {
+  // 构建树形数据结构 - 支持多入口方法
   const root: ChainNode = {
-    name: selection.value!.methodName,
-    className: selection.value!.className,
-    children: []
-  }
-
-  if (data && data.length > 0) {
-    root.children = data.map(item => ({
-      name: item.methodName || item.callee_method || item.caller_method || '',
-      className: item.className || item.callee_class || item.caller_class || '',
-      methodSignature: item.signature || ''
-    }))
+    name: '入口方法',
+    className: '',
+    children: entryMethods.value.map(method => {
+      const lastDot = method.lastIndexOf('.')
+      const methodName = lastDot > 0 ? method.substring(lastDot + 1) : method
+      const className = lastDot > 0 ? method.substring(0, lastDot) : ''
+      return {
+        name: methodName,
+        className: className,
+        methodSignature: method,
+        children: buildChildrenNodes(method, data, direction)
+      }
+    })
   }
 
   return root
 }
 
-const buildGraphData = (data: any): ChainNode => {
-  const nodes = data.nodes || []
+// 递归构建子节点
+const buildChildrenNodes = (parentMethod: string, data: any[], direction: 'upstream' | 'downstream'): ChainNode[] => {
+  if (!data || data.length === 0) return []
 
-  // Build root from entry methods
-  const root: ChainNode = {
-    name: '入口方法',
-    className: '',
-    children: entryMethods.value.map(method => ({
-      name: method.split('.').pop() || method,
-      className: method.substring(0, method.lastIndexOf('.')),
-      methodSignature: method,
-      children: []
-    }))
-  }
+  const children: ChainNode[] = []
+  const processedMethods = new Set<string>()
 
-  // Add dependency nodes
-  const nodeMap = new Map<string, ChainNode>()
-  nodes.forEach((node: any) => {
-    if (node.method && !node.isEntry) {
-      const chainNode: ChainNode = {
-        name: node.method.split('.').pop() || node.method,
-        className: node.method.substring(0, node.method.lastIndexOf('.')),
-        methodSignature: node.method
-      }
-      nodeMap.set(node.method, chainNode)
-    }
-  })
+  data.forEach(item => {
+    const targetMethod = direction === 'upstream' ? item.calledMethod : item.callingMethod
+    const childMethod = item.method
 
-  // Attach children based on depth
-  nodes.forEach((node: any) => {
-    if (node.calledMethod && nodeMap.has(node.method)) {
-      const parent = nodeMap.get(node.calledMethod)
-      const child = nodeMap.get(node.method)
-      if (parent && child) {
-        if (!parent.children) parent.children = []
-        parent.children.push(child)
+    // 匹配父方法
+    if (targetMethod && childMethod && matchesMethod(targetMethod, parentMethod)) {
+      if (!processedMethods.has(childMethod)) {
+        processedMethods.add(childMethod)
+        const lastDot = childMethod.lastIndexOf('.')
+        children.push({
+          name: lastDot > 0 ? childMethod.substring(lastDot + 1) : childMethod,
+          className: lastDot > 0 ? childMethod.substring(0, lastDot) : '',
+          methodSignature: childMethod,
+          children: buildChildrenNodes(childMethod, data, direction)
+        })
       }
     }
   })
 
-  return root
+  return children
+}
+
+// 检查方法名是否匹配（支持模糊匹配）
+const matchesMethod = (targetMethod: string, searchMethod: string): boolean => {
+  if (targetMethod === searchMethod) return true
+  // 处理带参数签名的情况
+  if (targetMethod.startsWith(searchMethod + ':')) return true
+  // 处理搜索方法不带完整包名的情况
+  if (targetMethod.endsWith('.' + searchMethod)) return true
+  return false
 }
 
 // Handle AI analysis
@@ -258,7 +328,7 @@ const handleAIAnalysis = async () => {
   analysisLoading.value = true
   try {
     const methodList = entryMethods.value.join(', ')
-    const direction = analysisDirection.value === 'upstream' ? '向上（查找调用方）' : '向下（查找被调用方）'
+    const direction = '向下（查找被调用方）'
 
     await promptStore.loadTemplates()
     const prompt = promptStore.render('impact-analysis', {
@@ -318,8 +388,10 @@ const handleMenuAction = (action: string, node: ChainNode) => {
         methodName: node.name
       }
       if (action === 'upstream') {
+        analysisDirection.value = 'upstream'
         loadUpstream()
       } else {
+        analysisDirection.value = 'downstream'
         loadDownstream()
       }
       break
@@ -390,6 +462,20 @@ onMounted(() => {
 
 .method-tag {
   margin-right: 4px;
+}
+
+.uri-list-section {
+  margin-top: 16px;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-size: 16px;
+  font-weight: 500;
+  color: #303133;
 }
 
 .method-reference-graph {

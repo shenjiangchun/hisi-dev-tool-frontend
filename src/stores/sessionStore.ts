@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { Session, Message, SessionStatus } from '@/types/session'
 import { sessionApi } from '@/api/session'
+import { claudeApi } from '@/api/claude'
 
 export const useSessionStore = defineStore('session', () => {
   // 状态
@@ -14,12 +15,15 @@ export const useSessionStore = defineStore('session', () => {
   // 每个会话的消息缓存（按 sessionId 存储）
   const messagesCache = ref<Record<string, Message[]>>({})
 
-  // 当前正在流式传输的会话 ID
+  // 当前正在流式传输的会话 ID（保留用于取消请求等场景）
   const streamingSessionId = ref<string | null>(null)
-  // 流式传输的内容缓存（用于页面跳转后恢复显示）
-  const streamingContent = ref<string>('')
-  // 流式传输状态
+  // 全局流式传输状态（保留用于全局判断）
   const isStreaming = ref(false)
+
+  // 每个会话的流式内容缓存（会话级别隔离）
+  const streamingContentCache = ref<Record<string, string>>({})
+  // 每个会话的流式状态缓存（会话级别隔离）
+  const streamingStatusCache = ref<Record<string, boolean>>({})
 
   // 计算属性
   const currentSession = computed(() =>
@@ -98,30 +102,75 @@ export const useSessionStore = defineStore('session', () => {
    * 设置正在流式传输的会话
    */
   function setStreamingSession(sessionId: string | null) {
+    const previousSessionId = streamingSessionId.value
     streamingSessionId.value = sessionId
+
     if (sessionId) {
       isStreaming.value = true
-      streamingContent.value = ''
+      // 初始化该会话的流式状态
+      streamingStatusCache.value[sessionId] = true
+      streamingContentCache.value[sessionId] = ''
     } else {
       isStreaming.value = false
-      streamingContent.value = ''
+      // 清除之前的会话流式状态
+      if (previousSessionId) {
+        streamingStatusCache.value[previousSessionId] = false
+      }
     }
   }
 
   /**
-   * 追加流式内容
+   * 追加流式内容到指定会话
    */
-  function appendStreamingContent(content: string) {
-    streamingContent.value += content
+  function appendStreamingContent(sessionId: string, content: string) {
+    if (!streamingContentCache.value[sessionId]) {
+      streamingContentCache.value[sessionId] = ''
+    }
+    streamingContentCache.value[sessionId] += content
   }
 
   /**
-   * 清空流式内容
+   * 追加流式内容（兼容旧接口，追加到当前流式会话）
    */
-  function clearStreamingContent() {
-    streamingContent.value = ''
-    isStreaming.value = false
-    streamingSessionId.value = null
+  function appendStreamingContentLegacy(content: string) {
+    if (streamingSessionId.value) {
+      appendStreamingContent(streamingSessionId.value, content)
+    }
+  }
+
+  /**
+   * 清空指定会话的流式内容
+   */
+  function clearStreamingContent(sessionId: string) {
+    streamingContentCache.value[sessionId] = ''
+    streamingStatusCache.value[sessionId] = false
+    if (streamingSessionId.value === sessionId) {
+      isStreaming.value = false
+      streamingSessionId.value = null
+    }
+  }
+
+  /**
+   * 清空当前流式会话的内容
+   */
+  function clearCurrentStreamingContent() {
+    if (streamingSessionId.value) {
+      clearStreamingContent(streamingSessionId.value)
+    }
+  }
+
+  /**
+   * 获取指定会话的流式内容
+   */
+  function getStreamingContent(sessionId: string): string {
+    return streamingContentCache.value[sessionId] || ''
+  }
+
+  /**
+   * 获取指定会话的流式状态
+   */
+  function isSessionStreaming(sessionId: string): boolean {
+    return streamingStatusCache.value[sessionId] || false
   }
 
   /**
@@ -198,6 +247,9 @@ export const useSessionStore = defineStore('session', () => {
       sessions.value = sessions.value.filter(s => s.id !== sessionId)
       // 清除消息缓存
       delete messagesCache.value[sessionId]
+      // 清除流式缓存
+      delete streamingContentCache.value[sessionId]
+      delete streamingStatusCache.value[sessionId]
       if (currentSessionId.value === sessionId) {
         currentSessionId.value = null
         messages.value = []
@@ -242,6 +294,71 @@ export const useSessionStore = defineStore('session', () => {
     }
   }
 
+  /**
+   * 关闭会话（保存 Claude 会话码用于恢复）
+   */
+  async function closeSession(sessionId: string): Promise<string | null> {
+    try {
+      const response = await claudeApi.endSession(sessionId)
+      const claudeSessionCode = response.data
+      // 更新会话对象的 claudeSessionCode
+      const session = sessions.value.find(s => s.id === sessionId)
+      if (session && claudeSessionCode) {
+        session.claudeSessionCode = claudeSessionCode
+      }
+      // 清除流式状态
+      delete streamingContentCache.value[sessionId]
+      delete streamingStatusCache.value[sessionId]
+      return claudeSessionCode
+    } catch (error) {
+      console.error('Failed to close session:', error)
+      return null
+    }
+  }
+
+  /**
+   * 恢复会话
+   */
+  async function resumeSession(sessionId: string): Promise<boolean> {
+    try {
+      const response = await claudeApi.resumeSession(sessionId)
+      return response.data === true
+    } catch (error) {
+      console.error('Failed to resume session:', error)
+      return false
+    }
+  }
+
+  /**
+   * 切换会话（不关闭当前会话，只是切换视图）
+   * 进行中的会话会继续在后台运行
+   */
+  function switchSession(newSessionId: string | null) {
+    const previousSessionId = currentSessionId.value
+
+    // 如果切换到不同的会话，只清除前端的流式显示状态
+    // 不关闭后端会话，让进行中的会话继续运行
+    if (previousSessionId && previousSessionId !== newSessionId) {
+      // 只清除前端的流式显示缓存，不中断后端会话
+      // 会话内容会在后端继续累积，切换回来时会显示
+      streamingStatusCache.value[previousSessionId] = false
+    }
+
+    // 立即切换到新会话
+    setCurrentSession(newSessionId)
+
+    // 如果新会话有 claudeSessionCode，尝试恢复
+    if (newSessionId) {
+      const session = sessions.value.find(s => s.id === newSessionId)
+      if (session?.claudeSessionCode) {
+        // 非阻塞恢复
+        resumeSession(newSessionId).catch(err => {
+          console.warn('Background resume session failed:', err)
+        })
+      }
+    }
+  }
+
   return {
     // 状态
     sessions,
@@ -250,8 +367,10 @@ export const useSessionStore = defineStore('session', () => {
     loading,
     total,
     streamingSessionId,
-    streamingContent,
     isStreaming,
+    // 会话级别流式状态
+    streamingContentCache,
+    streamingStatusCache,
     // 计算属性
     currentSession,
     activeSessions,
@@ -260,9 +379,14 @@ export const useSessionStore = defineStore('session', () => {
     loadSessions,
     loadSessionDetail,
     setCurrentSession,
+    switchSession,
     setStreamingSession,
     appendStreamingContent,
+    appendStreamingContentLegacy,
     clearStreamingContent,
+    clearCurrentStreamingContent,
+    getStreamingContent,
+    isSessionStreaming,
     addMessageToSession,
     addMessage,
     clearCurrentMessages,
@@ -270,6 +394,8 @@ export const useSessionStore = defineStore('session', () => {
     archiveSession,
     deleteSession,
     clearSessionMessages,
-    exportSession
+    exportSession,
+    closeSession,
+    resumeSession
   }
 })
