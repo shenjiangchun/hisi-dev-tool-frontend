@@ -462,7 +462,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, nextTick } from 'vue'
+import { ref, reactive, computed, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Search, Loading, Document, Warning, Cpu, Check, Delete, Plus } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
@@ -679,6 +679,23 @@ const buildDslQuery = () => {
 
   return query
 }
+
+// 监听 dslConfig 变化，实时更新 DSL 预览
+watch(
+  () => dslConfig,
+  () => {
+    // 只有在非手动 DSL 模式下才自动更新预览
+    if (!manualDsl.value.trim()) {
+      const dsl = buildDslQuery()
+      generatedDsl.value = JSON.stringify(dsl, null, 2)
+    }
+  },
+  { deep: true }
+)
+
+// 初始化时生成 DSL 预览
+const initDsl = buildDslQuery()
+generatedDsl.value = JSON.stringify(initDsl, null, 2)
 
 const previewDsl = () => {
   const dsl = buildDslQuery()
