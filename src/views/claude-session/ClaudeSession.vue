@@ -99,6 +99,28 @@
           </div>
         </div>
 
+        <!-- 会话基本信息 -->
+        <div class="session-meta-bar">
+          <div class="meta-item">
+            <span class="meta-label">Session ID:</span>
+            <span class="meta-value" @click="copyToClipboard(sessionStore.currentSessionId)">
+              {{ sessionStore.currentSessionId }}
+              <el-icon class="copy-icon"><DocumentCopy /></el-icon>
+            </span>
+          </div>
+          <div class="meta-item" v-if="sessionStore.currentSession.workingDirectory">
+            <span class="meta-label">工作目录:</span>
+            <span class="meta-value" @click="copyToClipboard(sessionStore.currentSession.workingDirectory)">
+              {{ sessionStore.currentSession.workingDirectory }}
+              <el-icon class="copy-icon"><DocumentCopy /></el-icon>
+            </span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">创建时间:</span>
+            <span class="meta-value">{{ formatDateTime(sessionStore.currentSession.createdAt) }}</span>
+          </div>
+        </div>
+
         <!-- 消息列表 -->
         <div class="message-list" ref="messageListRef">
           <div
@@ -152,7 +174,7 @@
 import { ref, computed, onMounted, nextTick, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Folder, FolderOpened, Edit, Plus } from '@element-plus/icons-vue'
+import { Folder, FolderOpened, Edit, Plus, DocumentCopy } from '@element-plus/icons-vue'
 import { useSessionStore } from '@/stores/sessionStore'
 import { claudeApi } from '@/api/claude'
 import { useAppStore } from '@/stores/app'
@@ -231,6 +253,28 @@ function formatDate(dateStr: string): string {
     hour: '2-digit',
     minute: '2-digit'
   })
+}
+
+function formatDateTime(dateStr: string): string {
+  if (!dateStr) return '-'
+  return new Date(dateStr).toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  })
+}
+
+async function copyToClipboard(text: string | undefined) {
+  if (!text) return
+  try {
+    await navigator.clipboard.writeText(text)
+    ElMessage.success('已复制到剪贴板')
+  } catch {
+    ElMessage.error('复制失败')
+  }
 }
 
 function startEditTitle() {
@@ -574,6 +618,53 @@ onMounted(() => {
 }
 
 .session-info h3:hover .edit-icon {
+  opacity: 1;
+}
+
+.session-meta-bar {
+  padding: 12px 24px;
+  background: #f9fafc;
+  border-bottom: 1px solid #e4e7ed;
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.meta-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.meta-label {
+  font-size: 12px;
+  color: #909399;
+}
+
+.meta-value {
+  font-size: 12px;
+  color: #606266;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.meta-value:hover {
+  background: #ecf5ff;
+  color: #409eff;
+}
+
+.copy-icon {
+  font-size: 12px;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.meta-value:hover .copy-icon {
   opacity: 1;
 }
 

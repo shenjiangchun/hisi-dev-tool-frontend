@@ -280,7 +280,8 @@ export const useSessionStore = defineStore('session', () => {
   async function exportSession(sessionId: string, format: 'markdown' | 'json' = 'markdown') {
     try {
       const response = await sessionApi.export(sessionId, format)
-      const blob = new Blob([response.data], {
+      // 响应拦截器已返回 response.data，对于 blob 响应，response 本身就是 Blob
+      const blob = response instanceof Blob ? response : new Blob([response], {
         type: format === 'json' ? 'application/json' : 'text/markdown'
       })
       const url = URL.createObjectURL(blob)
