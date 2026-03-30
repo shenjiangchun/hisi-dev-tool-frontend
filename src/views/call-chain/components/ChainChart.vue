@@ -247,7 +247,7 @@
             class="uri-item"
           >
             <span class="uri-index">{{ index + 1 }}</span>
-            <span class="uri-text">{{ item.uri }}</span>
+            <span class="uri-text">{{ item.uri || item.rootUri }}</span>
           </div>
         </div>
         <!-- 向下查询 - 调用链 -->
