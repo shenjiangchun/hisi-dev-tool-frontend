@@ -711,6 +711,9 @@ onMounted(() => {
 
 .message-text {
   line-height: 1.6;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  word-break: break-word;
 }
 
 .message-text :deep(pre) {
