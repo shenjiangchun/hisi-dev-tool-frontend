@@ -16,6 +16,12 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/claude-terminal',
+    name: 'ClaudeTerminal',
+    component: () => import('@/views/claude-terminal/ClaudeTerminal.vue'),
+    meta: { title: 'Claude 终端' }
+  },
+  {
     path: '/log-analysis',
     name: 'LogAnalysis',
     component: () => import('@/views/log-analysis/LogQuery.vue'),
