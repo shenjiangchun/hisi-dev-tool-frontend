@@ -7,6 +7,7 @@ import App from './App.vue'
 import router from './router'
 import pinia from './stores'
 import '@/styles/global.css'
+import './styles/claude-chat.scss'
 
 const app = createApp(App)
 

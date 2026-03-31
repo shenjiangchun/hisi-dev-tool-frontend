@@ -1,0 +1,91 @@
+// Claude Chat Styles
+
+// Theme variables
+:root {
+  --chat-primary: #409eff;
+  --chat-bg: #f5f7fa;
+  --chat-message-user: #409eff;
+  --chat-message-ai: #ffffff;
+  --chat-border: #e4e7ed;
+}
+
+// Bubble styles
+.x-bubble-list {
+  .x-bubble {
+    max-width: 80%;
+    margin-bottom: 16px;
+
+    &.x-bubble-user {
+      background: var(--chat-message-user);
+      color: #fff;
+      border-radius: 16px 16px 4px 16px;
+    }
+
+    &.x-bubble-assistant {
+      background: var(--chat-message-ai);
+      border: 1px solid var(--chat-border);
+      border-radius: 16px 16px 16px 4px;
+    }
+  }
+}
+
+// Code block styles
+pre[class*="language-"] {
+  background: #1e1e1e;
+  border-radius: 8px;
+  padding: 16px;
+  overflow-x: auto;
+  margin: 8px 0;
+
+  code {
+    font-family: 'Fira Code', 'Consolas', 'Monaco', monospace;
+    font-size: 14px;
+    color: #d4d4d4;
+  }
+}
+
+// Inline code
+code:not([class*="language-"]) {
+  background: #f5f7fa;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'Fira Code', 'Consolas', monospace;
+  font-size: 13px;
+}
+
+// Sender styles
+.x-sender {
+  border: 1px solid var(--chat-border);
+  border-radius: 12px;
+  overflow: hidden;
+
+  .x-sender-textarea {
+    min-height: 60px;
+    padding: 12px;
+    font-size: 14px;
+    line-height: 1.6;
+    resize: none;
+    border: none;
+    outline: none;
+  }
+}
+
+// Streaming cursor animation
+.streaming-cursor {
+  display: inline-block;
+  animation: blink 1s infinite;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+// Dark mode support (optional)
+@media (prefers-color-scheme: dark) {
+  :root {
+    --chat-bg: #1a1a1a;
+    --chat-message-ai: #2a2a2a;
+    --chat-border: #404040;
+  }
+}
