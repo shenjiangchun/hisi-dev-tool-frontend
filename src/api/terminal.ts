@@ -3,18 +3,21 @@
  * 管理与后端 PTY 进程的实时通信
  */
 
-import type { TerminalConnectionStatus } from '@/types/terminal'
+import { ref } from 'vue'
+import type { TerminalConnectionStatus, TerminalClientMessage, TerminalServerMessage } from '@/types/terminal'
 
 export interface TerminalCallbacks {
   onOpen?: () => void
   onClose?: () => void
   onError?: (error: string) => void
-  onData?: (data: string) => void
+  onOutput?: (data: string) => void
+  onSessionInfo?: (claudeSessionId: string) => void
+  onReady?: () => void
   onStatusChange?: (status: TerminalConnectionStatus) => void
 }
 
 export interface TerminalConnection {
-  send: (data: string) => void
+  send: (message: TerminalClientMessage) => void
   close: () => void
   getStatus: () => TerminalConnectionStatus
 }
@@ -26,11 +29,11 @@ export function createTerminalConnection(callbacks: TerminalCallbacks): Terminal
   const host = window.location.host
   const wsUrl = `${protocol}//${host}${WS_ENDPOINT}`
 
-  let status: TerminalConnectionStatus = 'disconnected'
+  const status = ref<TerminalConnectionStatus>('disconnected')
   let socket: WebSocket | null = null
 
   const updateStatus = (newStatus: TerminalConnectionStatus) => {
-    status = newStatus
+    status.value = newStatus
     callbacks.onStatusChange?.(newStatus)
   }
 
@@ -55,9 +58,28 @@ export function createTerminalConnection(callbacks: TerminalCallbacks): Terminal
         callbacks.onError?.('WebSocket connection error')
       }
 
-      socket.onmessage = (event) => {
-        if (typeof event.data === 'string') {
-          callbacks.onData?.(event.data)
+      socket.onmessage = (event: MessageEvent) => {
+        try {
+          const msg: TerminalServerMessage = JSON.parse(event.data)
+          switch (msg.type) {
+            case 'output':
+              callbacks.onOutput?.(msg.data || '')
+              break
+            case 'session_info':
+              callbacks.onSessionInfo?.(msg.claudeSessionId || '')
+              break
+            case 'ready':
+              callbacks.onReady?.()
+              break
+            case 'error':
+              callbacks.onError?.(msg.data || 'Unknown error')
+              break
+          }
+        } catch (e) {
+          // If not JSON, treat as raw text output
+          if (typeof event.data === 'string') {
+            callbacks.onOutput?.(event.data)
+          }
         }
       }
     } catch (error) {
@@ -66,9 +88,9 @@ export function createTerminalConnection(callbacks: TerminalCallbacks): Terminal
     }
   }
 
-  const send = (data: string) => {
+  const send = (message: TerminalClientMessage) => {
     if (socket && socket.readyState === WebSocket.OPEN) {
-      socket.send(data)
+      socket.send(JSON.stringify(message))
     }
   }
 
@@ -80,7 +102,7 @@ export function createTerminalConnection(callbacks: TerminalCallbacks): Terminal
     updateStatus('disconnected')
   }
 
-  const getStatus = (): TerminalConnectionStatus => status
+  const getStatus = (): TerminalConnectionStatus => status.value
 
   // Start connection
   connect()
