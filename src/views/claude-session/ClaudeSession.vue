@@ -103,7 +103,7 @@
         <div class="session-meta-bar">
           <div class="meta-item">
             <span class="meta-label">Session ID:</span>
-            <span class="meta-value" @click="copyToClipboard(sessionStore.currentSessionId)">
+            <span class="meta-value" @click="copyToClipboard(sessionStore.currentSessionId ?? undefined)">
               {{ sessionStore.currentSessionId }}
               <el-icon class="copy-icon"><DocumentCopy /></el-icon>
             </span>

@@ -286,6 +286,7 @@ interface ChainNode {
   method?: string
   package?: string
   uri?: string
+  rootUri?: string
 }
 
 const props = defineProps<{

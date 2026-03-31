@@ -73,7 +73,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
-import { FolderOpened, Folder, Plus, DArrowRight, DArrowLeft } from '@element-plus/icons-vue'
+import { FolderOpened, Folder, Plus } from '@element-plus/icons-vue'
 
 const emit = defineEmits<{
   newSession: []
