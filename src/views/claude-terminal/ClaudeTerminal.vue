@@ -51,6 +51,7 @@ const workspaceStore = useWorkspaceStore()
 const terminalContainerRef = ref<HTMLElement | null>(null)
 let terminal: Terminal | null = null
 let fitAddon: FitAddon | null = null
+let onDataDisposable: { dispose: () => void } | null = null
 const connectionStatus = ref<TerminalConnectionStatus>('disconnected')
 let terminalConnection: ReturnType<typeof createTerminalConnection> | null = null
 
@@ -86,6 +87,11 @@ const statusTagType = computed(() => {
 })
 
 function initTerminal() {
+  // Dispose existing terminal first to prevent memory leak
+  if (terminal) {
+    terminal.dispose()
+    terminal = null
+  }
   if (!terminalContainerRef.value) return
 
   terminal = new Terminal({
@@ -111,7 +117,7 @@ function initTerminal() {
   terminal.open(terminalContainerRef.value)
   fitTerminal()
 
-  terminal.onData((data) => {
+  onDataDisposable = terminal.onData((data) => {
     terminalConnection?.send({ action: 'input', data })
   })
 }
@@ -251,6 +257,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   terminalConnection?.close()
+  onDataDisposable?.dispose()
   terminal?.dispose()
   resizeObserver?.disconnect()
   window.removeEventListener('resize', fitTerminal)
