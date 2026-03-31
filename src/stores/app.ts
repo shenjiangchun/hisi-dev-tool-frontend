@@ -20,6 +20,8 @@ export const useAppStore = defineStore('app', () => {
     'claude-terminal': true, // Always available
     'call-chain': projectDirConfigured.value && projectSelected.value,
     'log-analysis': projectDirConfigured.value && projectSelected.value,
+    'claude-session': projectDirConfigured.value && projectSelected.value, // 需要选择项目
+    'prompt-config': true, // 提示词配置始终可用
     'ops': false // Permanently disabled - no local monitoring capability
   }))
 

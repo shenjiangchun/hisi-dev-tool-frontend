@@ -1,4 +1,5 @@
 import request from '@/utils/request'
+import type { UniversalChatRequest, StreamCallbacks as StreamCallbacksType } from '@/types/session'
 
 export interface AnalyzeLogRequest {
   /** 错误摘要（日志头+异常类型+消息） */
@@ -40,13 +41,8 @@ export interface ChatRequest {
   message: string
 }
 
-// 流式分析回调
-export interface StreamCallbacks {
-  onSession?: (sessionId: string) => void
-  onOutput?: (line: string) => void
-  onDone?: (status: string) => void
-  onError?: (error: string) => void
-}
+// 流式分析回调 (兼容旧接口)
+export type StreamCallbacks = StreamCallbacksType
 
 export const claudeApi = {
   // 非流式分析（保留兼容）
@@ -181,9 +177,106 @@ export const claudeApi = {
   },
 
   /**
-   * 结束会话
+   * 结束会话（返回 Claude 会话码用于恢复）
    */
   endSession(sessionId: string) {
     return request.delete(`/claude/session/${sessionId}`)
+  },
+
+  /**
+   * 恢复会话
+   */
+  resumeSession(sessionId: string) {
+    return request.post(`/claude/session/${sessionId}/resume`)
+  },
+
+  /**
+   * 获取会话的 Claude 会话码
+   */
+  getSessionCode(sessionId: string) {
+    return request.get(`/claude/session/${sessionId}/code`)
+  },
+
+  /**
+   * 通用对话接口 - 支持多种场景
+   * @param data 通用对话请求
+   * @param callbacks 回调函数
+   * @returns 返回 sessionId 的 Promise
+   */
+  async universalChat(
+    data: UniversalChatRequest,
+    callbacks: StreamCallbacks
+  ): Promise<string> {
+    return new Promise((resolve, reject) => {
+      let sessionId = data.sessionId || ''
+      let buffer = ''
+      let currentEventType = ''
+
+      fetch('/api/claude/universal-chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
+      })
+        .then(response => {
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`)
+          }
+
+          const reader = response.body?.getReader()
+          if (!reader) {
+            throw new Error('No reader available')
+          }
+
+          const decoder = new TextDecoder()
+
+          const readChunk = (): Promise<void> => {
+            return reader.read().then(({ done, value }) => {
+              if (done) {
+                callbacks.onDone?.('completed')
+                resolve(sessionId)
+                return
+              }
+
+              buffer += decoder.decode(value, { stream: true })
+
+              // 解析 SSE 格式
+              const lines = buffer.split('\n')
+              buffer = lines.pop() || ''
+
+              for (const line of lines) {
+                if (line.startsWith('event:')) {
+                  currentEventType = line.slice(6).trim()
+                } else if (line.startsWith('data:')) {
+                  const content = line.slice(5).trim()
+
+                  if (currentEventType === 'session') {
+                    // 收到 session ID
+                    sessionId = content
+                    callbacks.onSession?.(content)
+                  } else if (currentEventType === 'done') {
+                    callbacks.onDone?.(content)
+                  } else if (currentEventType === 'error') {
+                    callbacks.onError?.(content)
+                  } else {
+                    // 默认是 output 事件
+                    callbacks.onOutput?.(content)
+                  }
+                  currentEventType = ''
+                }
+              }
+
+              return readChunk()
+            })
+          }
+
+          return readChunk()
+        })
+        .catch(error => {
+          callbacks.onError?.(error.message)
+          reject(error)
+        })
+    })
   }
 }

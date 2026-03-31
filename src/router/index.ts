@@ -38,6 +38,23 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/claude-session',
+    name: 'ClaudeSession',
+    component: () => import('@/views/claude-session/ClaudeSession.vue'),
+    meta: {
+      title: 'Claude 会话',
+      keepAlive: true
+    }
+  },
+  {
+    path: '/prompt-config',
+    name: 'PromptConfig',
+    component: () => import('@/views/prompt-config/PromptConfig.vue'),
+    meta: {
+      title: '提示词配置'
+    }
+  },
+  {
     path: '/call-chain',
     redirect: '/call-chain/uri-chain'
   },

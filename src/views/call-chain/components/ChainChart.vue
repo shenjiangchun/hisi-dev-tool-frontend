@@ -167,13 +167,22 @@
       class="context-menu"
       :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
     >
-      <div class="menu-item" @click="queryUpstream">
+      <div class="menu-item" @click="goToUpstream">
         <span class="menu-icon">↑</span>
-        <span>向上查询调用链</span>
+        <span>向上依赖分析</span>
+      </div>
+      <div class="menu-item" @click="goToDownstream">
+        <span class="menu-icon">↓</span>
+        <span>向下依赖分析</span>
+      </div>
+      <div class="menu-divider"></div>
+      <div class="menu-item" @click="queryUpstream">
+        <span class="menu-icon">🔍</span>
+        <span>向上查询调用链（弹窗）</span>
       </div>
       <div class="menu-item" @click="queryDownstream">
-        <span class="menu-icon">↓</span>
-        <span>向下查询调用链</span>
+        <span class="menu-icon">🔍</span>
+        <span>向下查询调用链（弹窗）</span>
       </div>
       <div class="menu-divider"></div>
       <div class="menu-item" @click="viewDetails">
@@ -227,8 +236,21 @@
     >
       <div class="recursive-content" v-loading="loadingRecursive">
         <div v-if="recursiveData.length === 0 && !loadingRecursive" class="no-result">
-          未找到相关调用链
+          未找到相关数据
         </div>
+        <!-- 向上查询 - URI列表 -->
+        <div v-else-if="isUpstreamQuery" class="uri-list">
+          <div class="uri-count">共找到 {{ recursiveData.length }} 个接口调用此方法</div>
+          <div
+            v-for="(item, index) in recursiveData"
+            :key="index"
+            class="uri-item"
+          >
+            <span class="uri-index">{{ index + 1 }}</span>
+            <span class="uri-text">{{ item.uri || item.rootUri }}</span>
+          </div>
+        </div>
+        <!-- 向下查询 - 调用链 -->
         <div v-else class="recursive-list">
           <div
             v-for="(node, index) in recursiveData"
@@ -263,6 +285,7 @@ interface ChainNode {
   depth?: number
   method?: string
   package?: string
+  uri?: string
 }
 
 const props = defineProps<{
@@ -273,6 +296,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'node-click', node: ChainNode, event: MouseEvent): void
   (e: 'recursive-query', type: 'upstream' | 'downstream', method: string, className: string): void
+  (e: 'navigate-method-ref', direction: 'up' | 'down', className: string, methodName: string): void
 }>()
 
 const viewMode = ref<'tree' | 'flow' | 'list'>('tree')
@@ -294,6 +318,7 @@ const loadingRecursive = ref(false)
 const showRecursiveResult = ref(false)
 const recursiveTitle = ref('')
 const recursiveData = ref<ChainNode[]>([])
+const isUpstreamQuery = ref(false)
 
 // 扁平化节点
 const flatNodes = computed(() => {
@@ -433,6 +458,22 @@ const queryDownstream = async () => {
   await doRecursiveQuery('downstream', method)
 }
 
+// 跳转到方法引用分析页面 - 向上
+const goToUpstream = () => {
+  hideContextMenu()
+  const node = contextMenu.value.node
+  if (!node) return
+  emit('navigate-method-ref', 'up', node.className || '', node.name || '')
+}
+
+// 跳转到方法引用分析页面 - 向下
+const goToDownstream = () => {
+  hideContextMenu()
+  const node = contextMenu.value.node
+  if (!node) return
+  emit('navigate-method-ref', 'down', node.className || '', node.name || '')
+}
+
 // 查看详情
 const viewDetails = () => {
   hideContextMenu()
@@ -472,7 +513,8 @@ const queryDownstreamFromDialog = async () => {
 const doRecursiveQuery = async (type: 'upstream' | 'downstream', method: string) => {
   loadingRecursive.value = true
   showRecursiveResult.value = true
-  recursiveTitle.value = type === 'upstream' ? '向上调用链查询结果' : '向下调用链查询结果'
+  isUpstreamQuery.value = type === 'upstream'
+  recursiveTitle.value = type === 'upstream' ? '向上查询 - 调用接口列表' : '向下调用链查询结果'
   recursiveData.value = []
 
   try {
@@ -486,7 +528,7 @@ const doRecursiveQuery = async (type: 'upstream' | 'downstream', method: string)
     if (response.data && response.data.data) {
       recursiveData.value = response.data.data
       if (response.data.data.length === 0) {
-        ElMessage.info('未找到相关调用链')
+        ElMessage.info('未找到相关数据')
       }
     }
   } catch (error: any) {
@@ -977,5 +1019,54 @@ onUnmounted(() => {
   font-size: 12px;
   color: #909399;
   margin-left: auto;
+}
+
+/* URI 列表样式 */
+.uri-list {
+  padding: 8px;
+}
+
+.uri-count {
+  font-size: 14px;
+  color: #606266;
+  margin-bottom: 16px;
+  padding-left: 8px;
+}
+
+.uri-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: #f5f7fa;
+  border-radius: 6px;
+  margin-bottom: 8px;
+  border-left: 3px solid #409eff;
+  transition: all 0.2s;
+}
+
+.uri-item:hover {
+  background: #e8f4ff;
+  border-left-color: #66b1ff;
+}
+
+.uri-index {
+  min-width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #409eff;
+  color: #fff;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.uri-text {
+  font-size: 14px;
+  font-family: monospace;
+  color: #303133;
+  word-break: break-all;
 }
 </style>
