@@ -1,6 +1,6 @@
-import { ref, nextTick, type Ref } from 'vue'
+import { ref, type Ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import type { BubbleListItem } from 'vue-element-plus-x'
+import type { ChatMessage } from '../types/chat.types'
 import { claudeApi } from '@/api/claude'
 
 export interface UseClaudeChatOptions {
@@ -11,7 +11,7 @@ export interface UseClaudeChatOptions {
 export function useClaudeChat(options: UseClaudeChatOptions) {
   const { sessionId, onMessageSaved } = options
 
-  const messageList = ref<BubbleListItem[]>([])
+  const messageList = ref<ChatMessage[]>([])
   const isStreaming = ref(false)
   const streamingContent = ref('')
 
@@ -37,7 +37,7 @@ export function useClaudeChat(options: UseClaudeChatOptions) {
     if (!content.trim()) return
 
     // 添加用户消息
-    const userMessage: BubbleListItem = {
+    const userMessage: ChatMessage = {
       key: `user-${Date.now()}`,
       role: 'user',
       content: content.trim()
@@ -45,7 +45,7 @@ export function useClaudeChat(options: UseClaudeChatOptions) {
     messageList.value.push(userMessage)
 
     // 添加 AI 消息占位
-    const aiMessage: BubbleListItem = {
+    const aiMessage: ChatMessage = {
       key: `assistant-${Date.now()}`,
       role: 'assistant',
       content: ''

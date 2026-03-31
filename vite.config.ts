@@ -3,19 +3,19 @@ import vue from '@vitejs/plugin-vue'
 import { fileURLToPath, URL } from 'node:url'
 import AutoImport from 'unplugin-auto-import/vite'
 import Components from 'unplugin-vue-components/vite'
-import { ElementPlusXResolver } from 'vue-element-plus-x'
+import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
     vue(),
     AutoImport({
-      resolvers: [ElementPlusXResolver()],
+      resolvers: [ElementPlusResolver()],
       imports: ['vue', 'pinia', 'vue-router'],
       dts: 'src/auto-imports.d.ts'
     }),
     Components({
-      resolvers: [ElementPlusXResolver()],
+      resolvers: [ElementPlusResolver()],
       dts: 'src/components.d.ts'
     })
   ],

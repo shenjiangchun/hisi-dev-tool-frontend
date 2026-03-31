@@ -54,16 +54,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
-import { BubbleList, Sender, Welcome, Prompts, type BubbleListItem, type PromptsItemsProps } from 'vue-element-plus-x'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted, h } from 'vue'
+import { BubbleList, Sender, Welcome, Prompts } from 'vue-element-plus-x'
+import type { ChatMessage, PromptsItemsProps } from '../types/chat.types'
 import { ElMessage } from 'element-plus'
 import { Search, Document, Warning, DocumentChecked } from '@element-plus/icons-vue'
-import { h } from 'vue'
 
 // Props
 interface Props {
   sessionId: string | null
-  messages: BubbleListItem[]
+  messages: ChatMessage[]
   isStreaming: boolean
 }
 
@@ -160,7 +160,7 @@ function handleSend(content: string) {
 /**
  * Handle file paste event
  */
-function handleFilePaste(file: File, fileList: FileList) {
+function handleFilePaste(file: File, _fileList: FileList) {
   const ext = '.' + file.name.split('.').pop()?.toLowerCase()
 
   if (!allowedFileTypes.includes(ext)) {

@@ -5,12 +5,20 @@
 </template>
 
 <script setup lang="ts">
-import type { SenderAction } from 'vue-element-plus-x'
+/**
+ * Quick action button configuration
+ */
+export interface QuickActionConfig {
+  key: string
+  name: string
+  icon: string
+  onClick: () => string
+}
 
 /**
  * 快捷按钮配置
  */
-export const quickActions: SenderAction[] = [
+export const quickActions: QuickActionConfig[] = [
   {
     key: 'code-review',
     name: '代码审查',
