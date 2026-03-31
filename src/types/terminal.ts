@@ -43,3 +43,33 @@ export interface TerminalSession {
   connectedAt: Date
   status: TerminalConnectionStatus
 }
+
+// Claude Workspace Session
+export interface ClaudeWorkspaceSession {
+  id: string
+  claudeSessionId: string
+  title: string
+  scene: string
+  status: 'active' | 'archived'
+  createdAt: Date
+  updatedAt: Date
+  workingDirectory?: string
+  initialPrompt?: string
+}
+
+// WebSocket Client → Server Messages
+export interface TerminalClientMessage {
+  action: 'start' | 'resume' | 'input' | 'resize'
+  data?: string
+  claudeSessionId?: string
+  cols?: number
+  rows?: number
+  workingDirectory?: string
+}
+
+// WebSocket Server → Client Messages
+export interface TerminalServerMessage {
+  type: 'output' | 'session_info' | 'error' | 'ready'
+  data?: string
+  claudeSessionId?: string
+}
