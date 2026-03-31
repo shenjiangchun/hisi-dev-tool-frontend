@@ -45,12 +45,12 @@ export function createTerminalConnection(callbacks: TerminalCallbacks): Terminal
         callbacks.onOpen?.()
       }
 
-      socket.onclose = (event) => {
+      socket.onclose = () => {
         updateStatus('disconnected')
         callbacks.onClose?.()
       }
 
-      socket.onerror = (event) => {
+      socket.onerror = () => {
         updateStatus('error')
         callbacks.onError?.('WebSocket connection error')
       }
