@@ -14,7 +14,7 @@
       <BubbleList
         v-else
         ref="bubbleListRef"
-        :list="messages"
+        :list="bubbleListItems"
         :auto-scroll="true"
         :max-height="messageAreaHeight"
       />
@@ -35,19 +35,21 @@
       />
     </div>
 
-    <!-- Input Area -->
+    <!-- Input Area with MentionSender for command support -->
     <div class="input-area">
-      <Sender
+      <MentionSender
         ref="senderRef"
         v-model="inputValue"
-        placeholder="输入消息... (Ctrl+Enter 发送)"
+        placeholder="输入消息... (Ctrl+Enter 发送，/ 触发命令)"
         :loading="isStreaming"
         :disabled="!sessionId"
         :auto-size="{ minRows: 2, maxRows: 6 }"
-        :trigger-strings="triggerStrings"
-        clearable
+        :trigger-strings="['/', '@']"
+        :options="commandOptions"
+        trigger-popover-placement="top"
         @submit="handleSend"
         @paste-file="handleFilePaste"
+        @select="handleCommandSelect"
       />
     </div>
   </div>
@@ -55,10 +57,11 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted, h } from 'vue'
-import { BubbleList, Sender, Welcome, Prompts } from 'vue-element-plus-x'
+import { BubbleList, MentionSender, Welcome, Prompts } from 'vue-element-plus-x'
+import type { BubbleListItemProps, MentionOption } from 'vue-element-plus-x'
 import type { ChatMessage, PromptsItemsProps } from '../types/chat.types'
 import { ElMessage } from 'element-plus'
-import { Search, Document, Warning, DocumentChecked } from '@element-plus/icons-vue'
+import { Search, Document, Warning, DocumentChecked, Tools, Setting, FolderOpened, Tickets, Operation } from '@element-plus/icons-vue'
 
 // Props
 interface Props {
@@ -82,9 +85,6 @@ const senderRef = ref<{ focus: () => void; clear: () => void } | null>(null)
 const inputValue = ref('')
 const messageAreaHeight = ref('100%')
 
-// Trigger strings for mention/command support
-const triggerStrings = ['/', '@']
-
 // Allowed file types for upload
 const allowedFileTypes = [
   '.java', '.ts', '.js', '.vue', '.json',
@@ -94,6 +94,21 @@ const allowedFileTypes = [
 
 // Show quick actions when no messages
 const showQuickActions = computed(() => props.messages.length === 0)
+
+// Convert ChatMessage[] to BubbleListItemProps[] with proper placement
+const bubbleListItems = computed<BubbleListItemProps[]>(() => {
+  return props.messages.map((msg) => ({
+    key: msg.key,
+    // User messages on the right (end), AI messages on the left (start)
+    placement: msg.role === 'user' ? 'end' : 'start',
+    content: msg.content,
+    // Use different variants for user vs AI
+    variant: msg.role === 'user' ? 'filled' : 'borderless',
+    shape: 'round',
+    // Avatar could be added here if needed
+    // avatar: msg.role === 'assistant' ? '/ai-avatar.png' : undefined,
+  }))
+})
 
 // Quick action items configuration
 const quickActionItems: PromptsItemsProps[] = [
@@ -131,6 +146,28 @@ const quickActionPrompts: Record<string, string> = {
   'generate-test': '请为这段代码生成单元测试'
 }
 
+// Command options for MentionSender (triggered by /)
+const commandOptions = computed<MentionOption[]>(() => [
+  { value: 'plugin', label: '插件管理 - 查看和管理可用插件' },
+  { value: 'review', label: '代码审查 - 检查代码质量' },
+  { value: 'explain', label: '代码解释 - 解释代码逻辑' },
+  { value: 'fix', label: 'Bug 分析 - 分析和修复问题' },
+  { value: 'test', label: '生成测试 - 创建单元测试' },
+  { value: 'analyze', label: '项目分析 - 分析项目结构' },
+  { value: 'help', label: '帮助 - 显示可用命令' }
+]))
+
+// Command action mapping
+const commandActions: Record<string, string> = {
+  'plugin': '请列出当前可用的插件和工具，并说明如何使用它们。',
+  'review': '请帮我审查当前项目的代码质量，重点检查 TypeScript 类型定义与 Vue 组件的响应式逻辑',
+  'explain': '请解释这段代码的业务逻辑与实现思路',
+  'fix': '请帮我分析这个问题并提供修复建议',
+  'test': '请为这段代码生成单元测试',
+  'analyze': '请分析当前项目的整体结构和架构设计',
+  'help': '请列出所有可用的命令和功能。\n\n可用命令:\n- /plugin: 插件管理\n- /review: 代码审查\n- /explain: 代码解释\n- /fix: Bug 分析\n- /test: 生成测试\n- /analyze: 项目分析\n- /help: 显示帮助'
+}
+
 /**
  * Handle quick action click
  */
@@ -138,6 +175,18 @@ function handleQuickAction(item: PromptsItemsProps) {
   const prompt = quickActionPrompts[item.key as string]
   if (prompt) {
     handleSend(prompt)
+  }
+}
+
+/**
+ * Handle command selection from MentionSender dropdown
+ */
+function handleCommandSelect(option: MentionOption, _prefix: string) {
+  const command = option.value
+  const action = commandActions[command]
+  if (action) {
+    // Replace the command with the action prompt
+    inputValue.value = action
   }
 }
 
