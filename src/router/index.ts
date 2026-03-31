@@ -34,7 +34,7 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/claude-session',
     name: 'ClaudeSession',
-    component: () => import('@/views/claude-session/ClaudeSession.vue'),
+    component: () => import('@/views/claude-session/ClaudeSessionNew.vue'),
     meta: {
       title: 'Claude 会话',
       keepAlive: true
