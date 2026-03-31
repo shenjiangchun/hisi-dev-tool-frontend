@@ -251,19 +251,16 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { projectApi } from '@/api/project'
 import { taskApi } from '@/api/task'
 import { gitApi, type GitCommit, type UpdateAllResponse } from '@/api/git'
-import { claudeApi } from '@/api/claude'
-import { usePromptStore } from '@/stores/promptStore'
 import type { CallChainTask } from '@/types/callchain'
 import { useAppStore } from '@/stores/app'
-import { useSessionStore } from '@/stores/sessionStore'
+import { useWorkspaceStore } from '@/stores/workspaceStore'
 import ProjectDirConfig from '@/components/ProjectDirConfig.vue'
 import GitOperations from '@/components/GitOperations.vue'
 import type { GitRepositoryInfo } from '@/types/callchain'
 
 const router = useRouter()
 const appStore = useAppStore()
-const promptStore = usePromptStore()
-const sessionStore = useSessionStore()
+const workspaceStore = useWorkspaceStore()
 
 const loading = ref(false)
 const cloning = ref(false)
@@ -643,67 +640,19 @@ const handleCodeAnalysis = async () => {
   if (selectedCommits.value.length === 0) return
 
   analysisLoading.value = true
-
-  // 获取项目工作目录
-  const workingDirectory = getProjectPath(selectedProjectForCommit.value)
-
-  // 先生成 sessionId 并立即跳转
-  const sessionId = crypto.randomUUID()
-  sessionStore.setStreamingSession(sessionId)
-  commitDialogVisible.value = false
-  router.push({ name: 'ClaudeSession', query: { sessionId } })
-
   try {
     // Build prompt with commit info
     const commitInfos = selectedCommits.value.map(c =>
       `${c.commitId}: ${c.shortMessage} (${c.author})`
     ).join('\n')
 
-    await promptStore.loadTemplates()
-    const prompt = promptStore.render('code-analysis', {
-      codeSnippet: `以下是需要分析的 Git 提交:\n\n${commitInfos}`,
-      language: 'Java',
-      projectContext: `项目: ${selectedProjectForCommit.value}`
-    })
+    const prompt = `分析以下 Git 提交:\n\n${commitInfos}`
+    const workingDirectory = getProjectPath(selectedProjectForCommit.value)
 
-    await claudeApi.universalChat(
-      {
-        sessionId,  // 使用前端生成的 sessionId
-        prompt,
-        scene: 'code-analysis',
-        metadata: {
-          projectName: selectedProjectForCommit.value,
-          commits: selectedCommits.value.map(c => c.commitId)
-        },
-        workingDirectory  // 传递工作目录
-      },
-      {
-        onSession: () => {
-          // sessionId 已由前端生成，无需处理
-        },
-        onOutput: (content) => {
-          // 追加流式内容到指定会话
-          sessionStore.appendStreamingContent(sessionId, content)
-        },
-        onDone: () => {
-          // 流式完成，添加助手消息
-          const fullContent = sessionStore.getStreamingContent(sessionId)
-          sessionStore.addMessageToSession(sessionId, {
-            id: Date.now(),
-            sessionId: sessionId,
-            role: 'assistant',
-            content: fullContent,
-            createdAt: new Date().toISOString()
-          })
-          sessionStore.clearStreamingContent(sessionId)
-          ElMessage.success('分析完成')
-        },
-        onError: (error) => {
-          sessionStore.clearStreamingContent(sessionId)
-          ElMessage.error(`分析失败: ${error}`)
-        }
-      }
-    )
+    // Create session via workspaceStore and navigate
+    await workspaceStore.createSession('code-analysis', prompt, workingDirectory)
+    commitDialogVisible.value = false
+    router.push({ name: 'ClaudeTerminal' })
   } catch (error) {
     ElMessage.error('创建分析会话失败')
   } finally {
@@ -716,67 +665,19 @@ const handleImpactAnalysis = async () => {
   if (selectedCommits.value.length === 0) return
 
   analysisLoading.value = true
-
-  // 获取项目工作目录
-  const workingDirectory = getProjectPath(selectedProjectForCommit.value)
-
-  // 先生成 sessionId 并立即跳转
-  const sessionId = crypto.randomUUID()
-  sessionStore.setStreamingSession(sessionId)
-  commitDialogVisible.value = false
-  router.push({ name: 'ClaudeSession', query: { sessionId } })
-
   try {
+    // Build prompt with commit info
     const commitInfos = selectedCommits.value.map(c =>
       `${c.commitId}: ${c.shortMessage}`
     ).join('\n')
 
-    await promptStore.loadTemplates()
-    const prompt = promptStore.render('impact-analysis', {
-      changedFile: '多个文件变更',
-      changedMethod: '多个方法变更',
-      changeType: 'MODIFY',
-      projectName: selectedProjectForCommit.value
-    }) + `\n\n提交信息:\n${commitInfos}`
+    const prompt = `分析以下 Git 提交的影响范围:\n\n${commitInfos}`
+    const workingDirectory = getProjectPath(selectedProjectForCommit.value)
 
-    await claudeApi.universalChat(
-      {
-        sessionId,  // 使用前端生成的 sessionId
-        prompt,
-        scene: 'impact-analysis',
-        metadata: {
-          projectName: selectedProjectForCommit.value,
-          commits: selectedCommits.value.map(c => c.commitId)
-        },
-        workingDirectory  // 传递工作目录
-      },
-      {
-        onSession: () => {
-          // sessionId 已由前端生成，无需处理
-        },
-        onOutput: (content) => {
-          // 追加流式内容到指定会话
-          sessionStore.appendStreamingContent(sessionId, content)
-        },
-        onDone: () => {
-          // 流式完成，添加助手消息
-          const fullContent = sessionStore.getStreamingContent(sessionId)
-          sessionStore.addMessageToSession(sessionId, {
-            id: Date.now(),
-            sessionId: sessionId,
-            role: 'assistant',
-            content: fullContent,
-            createdAt: new Date().toISOString()
-          })
-          sessionStore.clearStreamingContent(sessionId)
-          ElMessage.success('分析完成')
-        },
-        onError: (error) => {
-          sessionStore.clearStreamingContent(sessionId)
-          ElMessage.error(`分析失败: ${error}`)
-        }
-      }
-    )
+    // Create session via workspaceStore and navigate
+    await workspaceStore.createSession('impact-analysis', prompt, workingDirectory)
+    commitDialogVisible.value = false
+    router.push({ name: 'ClaudeTerminal' })
   } catch (error) {
     ElMessage.error('创建分析会话失败')
   } finally {
