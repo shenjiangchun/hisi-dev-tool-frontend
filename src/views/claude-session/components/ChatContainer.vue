@@ -58,7 +58,8 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted, h } from 'vue'
 import { BubbleList, MentionSender, Welcome, Prompts } from 'vue-element-plus-x'
-import type { BubbleListItemProps, MentionOption } from 'vue-element-plus-x'
+import type { BubbleListItemProps } from 'vue-element-plus-x/types/components/BubbleList/types'
+import type { MentionOption } from 'vue-element-plus-x/types/components/MentionSender/types'
 import type { ChatMessage, PromptsItemsProps } from '../types/chat.types'
 import { ElMessage } from 'element-plus'
 import { Search, Document, Warning, DocumentChecked, Tools, Setting, FolderOpened, Tickets, Operation } from '@element-plus/icons-vue'
@@ -96,18 +97,18 @@ const allowedFileTypes = [
 const showQuickActions = computed(() => props.messages.length === 0)
 
 // Convert ChatMessage[] to BubbleListItemProps[] with proper placement
-const bubbleListItems = computed<BubbleListItemProps[]>(() => {
-  return props.messages.map((msg) => ({
-    key: msg.key,
-    // User messages on the right (end), AI messages on the left (start)
-    placement: msg.role === 'user' ? 'end' : 'start',
-    content: msg.content,
-    // Use different variants for user vs AI
-    variant: msg.role === 'user' ? 'filled' : 'borderless',
-    shape: 'round',
-    // Avatar could be added here if needed
-    // avatar: msg.role === 'assistant' ? '/ai-avatar.png' : undefined,
-  }))
+const bubbleListItems = computed<BubbleListItemProps[]>(function() {
+  return props.messages.map(function(msg) {
+    return {
+      key: msg.key,
+      // User messages on the right (end), AI messages on the left (start)
+      placement: msg.role === 'user' ? 'end' : 'start',
+      content: msg.content,
+      // Use different variants for user vs AI
+      variant: msg.role === 'user' ? 'filled' : 'borderless',
+      shape: 'round' as const
+    }
+  })
 })
 
 // Quick action items configuration
@@ -147,15 +148,17 @@ const quickActionPrompts: Record<string, string> = {
 }
 
 // Command options for MentionSender (triggered by /)
-const commandOptions = computed<MentionOption[]>(() => [
-  { value: 'plugin', label: '插件管理 - 查看和管理可用插件' },
-  { value: 'review', label: '代码审查 - 检查代码质量' },
-  { value: 'explain', label: '代码解释 - 解释代码逻辑' },
-  { value: 'fix', label: 'Bug 分析 - 分析和修复问题' },
-  { value: 'test', label: '生成测试 - 创建单元测试' },
-  { value: 'analyze', label: '项目分析 - 分析项目结构' },
-  { value: 'help', label: '帮助 - 显示可用命令' }
-]))
+const commandOptions = computed<MentionOption[]>(function() {
+  return [
+    { value: 'plugin', label: '插件管理 - 查看和管理可用插件' },
+    { value: 'review', label: '代码审查 - 检查代码质量' },
+    { value: 'explain', label: '代码解释 - 解释代码逻辑' },
+    { value: 'fix', label: 'Bug 分析 - 分析和修复问题' },
+    { value: 'test', label: '生成测试 - 创建单元测试' },
+    { value: 'analyze', label: '项目分析 - 分析项目结构' },
+    { value: 'help', label: '帮助 - 显示可用命令' }
+  ]
+}))
 
 // Command action mapping
 const commandActions: Record<string, string> = {
