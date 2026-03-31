@@ -1,10 +1,14 @@
 <template>
-  <div class="claude-terminal-page">
+  <div class="claude-workspace">
+    <SessionList
+      @new-session="handleNewSession"
+      @select-session="handleSelectSession"
+    />
     <div class="terminal-wrapper">
       <div class="terminal-header">
         <div class="terminal-title">
           <el-icon><Monitor /></el-icon>
-          <span>Claude CLI Terminal</span>
+          <span>{{ currentSessionTitle }}</span>
         </div>
         <div class="terminal-status">
           <el-tag :type="statusTagType" size="small">{{ statusText }}</el-tag>
@@ -19,12 +23,12 @@
         </div>
       </div>
       <div class="terminal-container" ref="terminalContainerRef"></div>
-    </div>
-    <div class="quick-actions">
-      <span class="actions-label">快捷命令：</span>
-      <el-button v-for="action in quickActions" :key="action.command" size="small" @click="executeCommand(action.command)">
-        {{ action.label }}
-      </el-button>
+      <div class="quick-actions">
+        <span class="actions-label">快捷命令：</span>
+        <el-button v-for="action in quickActions" :key="action.command" size="small" @click="executeCommand(action.command)">
+          {{ action.label }}
+        </el-button>
+      </div>
     </div>
   </div>
 </template>
@@ -37,8 +41,12 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import '@xterm/xterm/css/xterm.css'
 import { Monitor, RefreshRight, Delete } from '@element-plus/icons-vue'
 import { createTerminalConnection } from '@/api/terminal'
-import type { TerminalConnectionStatus } from '@/types/terminal'
+import type { TerminalConnectionStatus, TerminalClientMessage } from '@/types/terminal'
 import { ElMessage } from 'element-plus'
+import { useWorkspaceStore } from '@/stores/workspaceStore'
+import SessionList from './components/SessionList.vue'
+
+const workspaceStore = useWorkspaceStore()
 
 const terminalContainerRef = ref<HTMLElement | null>(null)
 let terminal: Terminal | null = null
@@ -52,6 +60,10 @@ const quickActions = [
   { label: '/config', command: '/config' },
   { label: '/clear', command: '/clear' },
 ]
+
+const currentSessionTitle = computed(() => {
+  return workspaceStore.currentSession?.title || 'Claude CLI Terminal'
+})
 
 const statusText = computed(() => {
   switch (connectionStatus.value) {
@@ -100,25 +112,99 @@ function initTerminal() {
   fitTerminal()
 
   terminal.onData((data) => {
-    terminalConnection?.send(data)
-  })
-
-  terminalConnection = createTerminalConnection({
-    onOpen: () => ElMessage.success('终端连接成功'),
-    onClose: () => ElMessage.warning('终端连接已断开'),
-    onError: (error) => ElMessage.error(`终端连接错误: ${error}`),
-    onData: (data) => terminal?.write(data),
-    onStatusChange: (status) => { connectionStatus.value = status },
+    terminalConnection?.send({ action: 'input', data })
   })
 }
 
+function connectTerminal(action: 'start' | 'resume', claudeSessionId?: string) {
+  connectionStatus.value = 'connecting'
+
+  terminalConnection = createTerminalConnection({
+    onOpen: () => {
+      connectionStatus.value = 'connected'
+      ElMessage.success('终端连接成功')
+    },
+    onClose: () => {
+      connectionStatus.value = 'disconnected'
+      ElMessage.warning('终端连接已断开')
+    },
+    onError: (error) => {
+      connectionStatus.value = 'error'
+      ElMessage.error(`终端连接错误: ${error}`)
+    },
+    onOutput: (data) => terminal?.write(data),
+    onSessionInfo: (claudeSessionId) => {
+      if (workspaceStore.currentSessionId) {
+        workspaceStore.bindClaudeSession(workspaceStore.currentSessionId, claudeSessionId)
+      }
+    },
+    onReady: () => {
+      // Send start or resume action
+      const message: TerminalClientMessage = { action }
+      if (claudeSessionId) {
+        message.claudeSessionId = claudeSessionId
+      }
+      terminalConnection?.send(message)
+
+      // Send initial prompt if present (only for new sessions)
+      if (action === 'start' && workspaceStore.currentSession?.initialPrompt) {
+        setTimeout(() => {
+          terminalConnection?.send({
+            action: 'input',
+            data: workspaceStore.currentSession!.initialPrompt + '\n'
+          })
+        }, 500)
+      }
+    }
+  })
+}
+
+function handleNewSession() {
+  // Disconnect current connection
+  terminalConnection?.close()
+  terminal?.clear()
+
+  // Create new session via store and connect
+  workspaceStore.createSession().then(() => {
+    initTerminal()
+    connectTerminal('start')
+  })
+}
+
+function handleSelectSession(sessionId: string) {
+  workspaceStore.selectSession(sessionId)
+  const session = workspaceStore.sessions.find(s => s.id === sessionId)
+
+  // Disconnect current connection
+  terminalConnection?.close()
+  terminal?.clear()
+
+  // Reinitialize terminal if needed
+  if (!terminal) {
+    initTerminal()
+  }
+
+  if (session?.claudeSessionId) {
+    connectTerminal('resume', session.claudeSessionId)
+  } else {
+    connectTerminal('start')
+  }
+}
+
 function executeCommand(command: string) {
-  terminalConnection?.send(command + '\r')
+  terminalConnection?.send({ action: 'input', data: command + '\n' })
 }
 
 function handleReconnect() {
   terminalConnection?.close()
-  initTerminal()
+  terminal?.clear()
+
+  const session = workspaceStore.currentSession
+  if (session?.claudeSessionId) {
+    connectTerminal('resume', session.claudeSessionId)
+  } else {
+    connectTerminal('start')
+  }
 }
 
 function handleClear() {
@@ -131,13 +217,36 @@ function fitTerminal() {
 
 let resizeObserver: ResizeObserver | null = null
 
-onMounted(() => {
+onMounted(async () => {
+  // Load existing sessions
+  await workspaceStore.loadSessions('active')
+
+  // Initialize terminal
   initTerminal()
+
+  // Setup resize observer
   if (terminalContainerRef.value) {
     resizeObserver = new ResizeObserver(fitTerminal)
     resizeObserver.observe(terminalContainerRef.value)
   }
   window.addEventListener('resize', fitTerminal)
+
+  // If there's already a current session, connect to it
+  if (workspaceStore.currentSession?.claudeSessionId) {
+    connectTerminal('resume', workspaceStore.currentSession.claudeSessionId)
+  } else if (workspaceStore.activeSessions.length > 0) {
+    // Select the first active session
+    const firstSession = workspaceStore.activeSessions[0]
+    workspaceStore.selectSession(firstSession.id)
+    if (firstSession.claudeSessionId) {
+      connectTerminal('resume', firstSession.claudeSessionId)
+    } else {
+      connectTerminal('start')
+    }
+  } else {
+    // No existing sessions, start a new one
+    connectTerminal('start')
+  }
 })
 
 onUnmounted(() => {
@@ -149,21 +258,16 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.claude-terminal-page {
+.claude-workspace {
   display: flex;
-  flex-direction: column;
   height: 100%;
   background: #1a1a1a;
-  padding: 16px;
 }
 .terminal-wrapper {
   display: flex;
   flex-direction: column;
   flex: 1;
-  border-radius: 12px;
-  overflow: hidden;
-  background: #1E1E1E;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  padding: 16px;
 }
 .terminal-header {
   display: flex;
@@ -171,6 +275,7 @@ onUnmounted(() => {
   align-items: center;
   padding: 12px 16px;
   background: #2d2d2d;
+  border-radius: 12px 12px 0 0;
   border-bottom: 1px solid #404040;
 }
 .terminal-title {
@@ -189,6 +294,8 @@ onUnmounted(() => {
   flex: 1;
   padding: 8px;
   min-height: 400px;
+  background: #1E1E1E;
+  border-radius: 0 0 12px 12px;
 }
 .quick-actions {
   display: flex;
