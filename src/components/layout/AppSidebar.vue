@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { Document, Share, Folder, Cpu } from '@element-plus/icons-vue'
+import { Document, Share, Folder, Cpu, Monitor } from '@element-plus/icons-vue'
 import { useRoute } from 'vue-router'
 import { computed } from 'vue'
 import type { Component } from 'vue'
 import { useAppStore } from '@/stores/app'
 
 // Define menu key type that matches availableMenus keys
-type MenuKey = 'call-chain' | 'log-analysis' | 'ops' | 'project-management' | 'mcp-guide'
+type MenuKey = 'call-chain' | 'log-analysis' | 'ops' | 'project-management' | 'mcp-guide' | 'claude-terminal'
 
 interface MenuItem {
   index: string
@@ -25,6 +25,12 @@ const baseMenuItems: MenuItem[] = [
     title: 'MCP 使用指南',
     icon: Cpu,
     menuKey: 'mcp-guide'
+  },
+  {
+    index: '/claude-terminal',
+    title: 'Claude 终端',
+    icon: Monitor,
+    menuKey: 'claude-terminal'
   },
   {
     index: '/log-analysis',
