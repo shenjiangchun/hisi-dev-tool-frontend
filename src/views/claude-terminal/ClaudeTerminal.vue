@@ -145,21 +145,20 @@ function connectTerminal(action: 'start' | 'resume', claudeSessionId?: string) {
       }
     },
     onReady: () => {
-      // Send start or resume action
+      // Send start or resume action to backend
       const message: TerminalClientMessage = { action }
       if (claudeSessionId) {
         message.claudeSessionId = claudeSessionId
       }
       terminalConnection?.send(message)
-
-      // Send initial prompt if present (only for new sessions)
+    },
+    onClaudeReady: () => {
+      // Claude is ready, send initial prompt if present
       if (action === 'start' && workspaceStore.currentSession?.initialPrompt) {
-        setTimeout(() => {
-          terminalConnection?.send({
-            action: 'input',
-            data: workspaceStore.currentSession!.initialPrompt + '\n'
-          })
-        }, 500)
+        terminalConnection?.send({
+          action: 'input',
+          data: workspaceStore.currentSession!.initialPrompt + '\n'
+        })
       }
     }
   })
@@ -267,7 +266,7 @@ onUnmounted(() => {
 <style scoped>
 .claude-workspace {
   display: flex;
-  height: 100%;
+  height: calc(100vh - 120px); /* Account for header and padding */
   background: #1a1a1a;
 }
 .terminal-wrapper {
@@ -300,7 +299,8 @@ onUnmounted(() => {
 .terminal-container {
   flex: 1;
   padding: 8px;
-  min-height: 400px;
+  min-height: 300px;
+  height: 0; /* Allow flex to control height */
   background: #1E1E1E;
   border-radius: 0 0 12px 12px;
 }

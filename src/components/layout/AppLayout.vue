@@ -10,7 +10,7 @@ import AppSidebar from './AppSidebar.vue'
       <AppHeader />
       <el-main class="app-main">
         <router-view v-slot="{ Component }">
-          <keep-alive :include="['ClaudeSession']">
+          <keep-alive>
             <component :is="Component" />
           </keep-alive>
         </router-view>
